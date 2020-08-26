@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// HTTPRequest represents an scanner HTTP request
+// HTTPRequest represents a fuzzer HTTP request
 type HTTPRequest struct {
 	Request     *http.Request
 	RequestText string // String representation of the Request
@@ -55,4 +55,23 @@ func RequestToString(r *http.Request) (string, error) {
 	RequestStr.WriteString("\r\n" + string(body) + "\r\n")
 
 	return RequestStr.String(), nil
+}
+
+// HTTPResponse represents a fuzzer HTTP response
+type HTTPResponse struct {
+	Response     *http.Response
+	ResponseText string // String representation of the Response
+}
+
+// NewHTTPResponseFromBytes take a []byte and returns a HTTPResponse
+func NewHTTPResponseFromBytes(resstr []byte, req *http.Request) (res HTTPResponse, err error) {
+	res.ResponseText = string(resstr)
+	reader := bytes.NewReader(resstr)
+	bufreader := bufio.NewReader(reader)
+	response, err := http.ReadResponse(bufreader, req)
+	if err != nil {
+		return res, err
+	}
+	req.Response = response
+	return res, nil
 }
