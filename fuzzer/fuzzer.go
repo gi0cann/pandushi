@@ -3,8 +3,11 @@ package fuzzer
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -24,6 +27,12 @@ func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
 	if err != nil {
 		return req, err
 	}
+	request.RequestURI = ""
+	newurl, err := url.Parse("http://" + request.Host + request.URL.Path)
+	if err != nil {
+		return req, err
+	}
+	request.URL = newurl
 	req.Request = request
 	return req, nil
 }
@@ -51,9 +60,7 @@ func RequestToString(r *http.Request) (string, error) {
 	for key, header := range r.Header {
 		RequestStr.WriteString(key + ": " + strings.Join(header, " ") + "\r\n")
 	}
-
 	RequestStr.WriteString("\r\n" + string(body) + "\r\n")
-
 	return RequestStr.String(), nil
 }
 
@@ -73,5 +80,44 @@ func NewHTTPResponseFromBytes(resstr []byte, req *http.Request) (res HTTPRespons
 		return res, err
 	}
 	req.Response = response
+	return res, nil
+}
+
+// ResponseToString takes a http.Response and returns a string
+func ResponseToString(r *http.Response) (string, error) {
+	var ResponseStr bytes.Buffer
+	ResponseStr.WriteString(r.Proto + " ")
+	ResponseStr.WriteString(r.Status + "\r\n")
+	for key, header := range r.Header {
+		ResponseStr.WriteString(key + ": " + strings.Join(header, " ") + "\r\n")
+	}
+	var body []byte
+	var reader io.ReadCloser
+	switch r.Header.Get("Content-Encoding") {
+	case "gzip":
+		var err error
+		reader, err = gzip.NewReader(r.Body)
+		if err != nil {
+			return ResponseStr.String(), err
+		}
+	default:
+		reader = r.Body
+	}
+	body, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return ResponseStr.String(), err
+	}
+	ResponseStr.WriteString("\r\n" + string(body) + "\r\n")
+	return ResponseStr.String(), nil
+}
+
+// NewHTTPResponse takes a http.Response and returns a HTTPResponse
+func NewHTTPResponse(baseres *http.Response) (res HTTPResponse, err error) {
+	res.Response = baseres
+	resStr, err := ResponseToString(baseres)
+	if err != nil {
+		return res, err
+	}
+	res.ResponseText = resStr
 	return res, nil
 }
