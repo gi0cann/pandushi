@@ -28,7 +28,7 @@ func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
 		return req, err
 	}
 	request.RequestURI = ""
-	newurl, err := url.Parse("http://" + request.Host + request.URL.Path)
+	newurl, err := url.Parse("http://" + request.Host + request.URL.Path + "?" + request.URL.RawQuery)
 	if err != nil {
 		return req, err
 	}
