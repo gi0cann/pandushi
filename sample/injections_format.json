@@ -1,0 +1,12 @@
+{
+    "inputs": [
+        {
+            "type": "xss",
+            "value": "<script>alert(1)</script>"
+        },
+        {
+            "type": "sql injection",
+            "value": "'1 or 1=1 --"
+        }
+    ]
+}
