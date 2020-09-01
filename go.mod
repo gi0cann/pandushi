@@ -1,3 +1,5 @@
-module github.com/gi0cann/gscanner
+module github.com/gi0cann/pandushi
 
 go 1.14
+
+require github.com/akamensky/argparse v1.2.2
