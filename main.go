@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -11,6 +13,9 @@ import (
 
 	"github.com/akamensky/argparse"
 	"github.com/gi0cann/pandushi/fuzzer"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
@@ -84,6 +89,21 @@ func main() {
 		}
 		defer payloadfd.Close()
 
+		client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+		if err != nil {
+			panic(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = client.Connect(ctx)
+		if err != nil {
+			panic(err)
+		}
+		defer client.Disconnect(ctx)
+		defer cancel()
+
+		pandushiDB := client.Database("pandushi")
+		injectionsCollection := pandushiDB.Collection("injections")
+
 		payloadsRaw, err := ioutil.ReadAll(payloadfd)
 		if err != nil {
 			panic(err)
@@ -93,6 +113,7 @@ func main() {
 		fmt.Printf("PayloadType: %s\n", *payloadType)
 
 		var testPayloads []fuzzer.Payload
+		injectionsCount := 0
 
 		for _, line := range strings.Split(string(payloadsRaw), "\n") {
 			testPayloads = append(testPayloads,
@@ -100,8 +121,19 @@ func main() {
 					InputType: *payloadType,
 					Value:     line,
 				})
+			injectionsResult, err := injectionsCollection.InsertOne(ctx, bson.D{
+				{Key: "type", Value: *payloadType},
+				{Key: "value", Value: line},
+			})
+			if err != nil {
+				log.Fatal(err)
+			} else {
+				injectionsCount++
+				fmt.Printf("inserted document with ID %v\n", injectionsResult.InsertedID)
+			}
 		}
 
+		fmt.Printf("Inserted %v documents into injections collection!\n", injectionsCount)
 		outfd, err := os.OpenFile("payloads.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			panic(err)
