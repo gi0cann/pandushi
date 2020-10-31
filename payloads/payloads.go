@@ -1,4 +1,4 @@
-package fuzzer
+package payloads
 
 // Payload represents a fuzzer input
 type Payload struct {

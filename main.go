@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/akamensky/argparse"
 	"github.com/gi0cann/pandushi/fuzzer"
+	"github.com/gi0cann/pandushi/payloads"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -57,29 +57,34 @@ func main() {
 		//fmt.Printf("HTTPRequest.Request: %s\n", request.Request.Method)
 		//fmt.Printf("RequestURI: %s\n", request.Request.RequestURI)
 		//fmt.Printf("Proto: %s\n", request.Request.Proto)
-		fmt.Printf("URL: %s\n", request.Request.URL)
+		//fmt.Printf("URL: %s\n", request.Request.URL)
 
-		reqstr, err := fuzzer.RequestToString(request.Request)
-		if err != nil {
-			panic(err)
-		}
+		/*
+			reqstr, err := fuzzer.RequestToString(request.Request)
+			if err != nil {
+				panic(err)
+			}
 
-		fmt.Printf("REQSTR:\n\n%s\n", reqstr)
+			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
 
-		client := http.Client{
-			Timeout: time.Duration(5 * time.Second),
-		}
-		resp, err := client.Do(request.Request)
-		if err != nil {
-			panic(err)
-		}
+			client := http.Client{
+				Timeout: time.Duration(5 * time.Second),
+			}
+			resp, err := client.Do(request.Request)
+			if err != nil {
+				panic(err)
+			}
 
-		httpres, err := fuzzer.NewHTTPResponse(resp)
-		if err != nil {
-			panic(err)
-		}
+			httpres, err := fuzzer.NewHTTPResponse(resp)
+			if err != nil {
+				panic(err)
+			}
 
-		fmt.Println(httpres.ResponseText)
+			fmt.Println(httpres.ResponseText)
+		*/
+		log.Println(request.IsMarked())
+		//fuzzerTask := fuzzer.NewTask([]string{"XSS"}, request)
+		//fuzzerTask.Run()
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)
 		fmt.Printf("Payload Type: %s\n", *payloadType)
@@ -112,12 +117,12 @@ func main() {
 		fmt.Printf("PayloadRAW: %s\n", payloadsRaw)
 		fmt.Printf("PayloadType: %s\n", *payloadType)
 
-		var testPayloads []fuzzer.Payload
+		var testPayloads []payloads.Payload
 		injectionsCount := 0
 
 		for _, line := range strings.Split(string(payloadsRaw), "\n") {
 			testPayloads = append(testPayloads,
-				fuzzer.Payload{
+				payloads.Payload{
 					InputType: *payloadType,
 					Value:     line,
 				})
