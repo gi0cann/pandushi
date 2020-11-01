@@ -205,8 +205,6 @@ Accept-Language: en-US,en;q=0.9
 			t.Fatalf("Error creating HTTPRequest from bytes %s\n", err)
 		}
 
-		request.CountInjectionPoints()
-
 		if request.TotalPathInjectionPoints != tt.expectedPathCount {
 			t.Errorf("Total path injection points don't match the expected total. Expected: %d got: %d\n", tt.expectedPathCount, request.TotalPathInjectionPoints)
 		}
