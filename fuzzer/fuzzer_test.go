@@ -1,9 +1,53 @@
 package fuzzer
 
 import (
+	"io/ioutil"
 	"net/http"
+	"strings"
 	"testing"
 )
+
+func TestCountJSONBody(t *testing.T) {
+	tests := []struct {
+		input         string
+		expectedCount int8
+	}{
+		{
+			`{"hello":"world"}`,
+			1,
+		},
+		{
+			`{"hello":"world", "pizza":"cheese", "foo":"bar"}`,
+			3,
+		},
+		{
+			`{"hello": ["world", "lol"]}`,
+			2,
+		},
+		{
+			`{"obj": {"hello": "world", "pizza":"cheese", "foo":"bar"}}`,
+			3,
+		},
+		{
+			`{"test": [{"hello":"world", "pizza":"cheese"}]}`,
+			3,
+		},
+	}
+
+	for _, tt := range tests {
+		reader := ioutil.NopCloser(strings.NewReader(tt.input))
+		JSONInterface, err := ByteToJSONInterface(reader)
+		if err != nil {
+			t.Fatalf("Error parsing JSON string: %s\n", err)
+		}
+
+		total := CountJSONBody(JSONInterface)
+
+		if total != tt.expectedCount {
+			t.Errorf("total did not match expectedCount on input %s. expected: %d got: %d\n", tt.input, tt.expectedCount, total)
+		}
+	}
+}
 
 func TestCountingInjectionPoints(t *testing.T) {
 	tests := []struct {

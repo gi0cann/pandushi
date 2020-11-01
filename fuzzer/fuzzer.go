@@ -58,20 +58,27 @@ func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
 	return req, nil
 }
 
+// ByteToJSONInterface takes a byte array as input and returns JSON inteface
+func ByteToJSONInterface(r io.ReadCloser) (interface{}, error) {
+	var JSONInterface interface{}
+	input, err := ioutil.ReadAll(r)
+	if err != nil {
+		return 0, err
+	}
+	fmt.Println(input)
+	err = json.Unmarshal(input, &JSONInterface)
+	if err != nil {
+		return JSONInterface, err
+	}
+	return JSONInterface, nil
+}
+
 //CountJSONBody take http.Request and return total amount of parameters
-func CountJSONBody(r *http.Request) (int8, error) {
+func CountJSONBody(jsoni interface{}) int8 {
 	count := int8(0)
-	var e interface{}
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return 0, err
-	}
-	err = json.Unmarshal(body, &e)
-	if err != nil {
-		return 0, err
-	}
-	m := e.(map[string]interface{})
+	m := jsoni.(map[string]interface{})
 	for k, v := range m {
+		//fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
 		switch vv := v.(type) {
 		case string:
 			//fmt.Printf("String: %s:%s\n", k, v)
@@ -83,20 +90,29 @@ func CountJSONBody(r *http.Request) (int8, error) {
 			//fmt.Printf("Float: %s:%f\n", k, v)
 			count++
 		case []interface{}:
-			for range vv {
+			for _, vi := range vv {
+				//fmt.Printf("default: %s:%v:%T\n", k, vi, v)
+				//fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
+				switch vi.(type) {
+				case map[string]interface{}:
+					count += CountJSONBody(vi)
+				}
 				count++
+
 			}
 		case bool:
-			//fmt.Printf("Bool: %s:%t\n", k, v)
+			fmt.Printf("Bool: %s:%T\n", k, v)
 			count++
+		case map[string]interface{}:
+			count += CountJSONBody(v)
 		default:
-			fmt.Println(k, "is an unknown type")
+			fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
 		}
 	}
 
 	//fmt.Println(body)
 	//fmt.Println(len(body))
-	return count, nil
+	return count
 }
 
 // CountInjectionPoints takes a http.Request and return to total amount of injection points
@@ -138,18 +154,20 @@ func (req *HTTPRequest) CountInjectionPoints() {
 			req.TotalInjectionPoints += req.TotalBodyInjectionPoints
 		}
 	} else if strings.Contains(ContentType, "application/json") {
-		jsoncount, err := CountJSONBody(r)
+		JSONInterface, err := ByteToJSONInterface(r.Body)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("ContInjectionPoints", err)
 		} else {
+			jsoncount := CountJSONBody(JSONInterface)
 			req.TotalBodyInjectionPoints += jsoncount
 			req.TotalInjectionPoints += jsoncount
 		}
 	} else if strings.Contains(ContentType, "text/plain") {
-		jsoncount, err := CountJSONBody(r)
+		JSONInterface, err := ByteToJSONInterface(r.Body)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("ContInjectionPoints", err)
 		} else {
+			jsoncount := CountJSONBody(JSONInterface)
 			req.TotalBodyInjectionPoints += jsoncount
 			req.TotalInjectionPoints += jsoncount
 		}
@@ -256,6 +274,17 @@ func NewHTTPResponse(baseres *http.Response) (res HTTPResponse, err error) {
 	return res, nil
 }
 
+// TestCase contain information about a fuzz case such as request, response, injection, etc.
+type TestCase struct {
+	Request        HTTPRequest
+	Response       HTTPResponse
+	Injection      string
+	InjectionType  string
+	InjectionPoint string
+	Duration       string
+	Status         string
+}
+
 // Task represents a Fuzzer task
 type Task struct {
 	InjectionTypes []string
@@ -263,6 +292,7 @@ type Task struct {
 	Start          time.Time
 	End            time.Time
 	State          string
+	TestCases      []TestCase
 }
 
 // NewTask takes a list of InjectionTypes and HTTPRequest and returns a FuzzerTask
