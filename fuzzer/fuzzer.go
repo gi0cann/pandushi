@@ -178,7 +178,12 @@ func (req *HTTPRequest) CountInjectionPoints() {
 // NewHTTPRequestFromRequest takes a http.Request and returns a HTTPRequest
 func NewHTTPRequestFromRequest(r *http.Request) (req HTTPRequest) {
 	req.Request = r
-	req.RequestText = string("test")
+	RequestText, err := RequestToString(req.Request)
+	if err != nil {
+		req.RequestText = ""
+	} else {
+		req.RequestText = RequestText
+	}
 	req.CountInjectionPoints()
 	return req
 }
@@ -186,9 +191,12 @@ func NewHTTPRequestFromRequest(r *http.Request) (req HTTPRequest) {
 // RequestToString takes a http.Request and returns a string
 func RequestToString(r *http.Request) (string, error) {
 	var RequestStr bytes.Buffer
+	//query, _ := url.QueryUnescape(r.URL.RawQuery)
+	query := r.URL.RawQuery
 	RequestStr.WriteString(r.Method + " ")
-	RequestStr.WriteString(r.URL.Path + " ")
+	RequestStr.WriteString(r.URL.Path + "?" + query + " ")
 	RequestStr.WriteString(r.Proto + "\r\n")
+	RequestStr.WriteString("Host: " + r.Host + "\r\n")
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return RequestStr.String(), err
@@ -366,4 +374,40 @@ func (f Task) Run() {
 	}
 	wg.Wait()
 	f.End = time.Now()
+}
+
+// InjectQueryParameters Injects and array of payloads into a HTTPRequest's query parameters
+func (req *HTTPRequest) InjectQueryParameters(injections []string) []HTTPRequest {
+	var InjectedRequests []HTTPRequest
+	query := req.Request.URL.Query()
+	for _, injection := range injections {
+		for k := range query {
+			NewQuery := url.Values{}
+			for ik, v := range query {
+				NewQuery.Set(ik, strings.Join(v, ""))
+			}
+			NewQuery.Set(k, injection)
+			rawquery := NewQuery.Encode()
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			if err != nil {
+				fmt.Printf("Error Creating HTTPRequest: %s", err)
+			} else {
+				NewHTTPRequest.Request.URL.RawQuery = rawquery
+				NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+				if err == nil {
+					NewHTTPRequest.RequestText = NewRequestText
+				}
+				fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
+				fmt.Printf("Request rawquery addr: %p\n", &NewHTTPRequest.Request.URL.RawQuery)
+				fmt.Printf("Request addr: %p\n", NewHTTPRequest.Request)
+				//fmt.Printf("Original raw query: %s\n", req.Request.URL.RawQuery)
+				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
+				//fmt.Printf("Request text: %s\n", NewHTTPRequest.RequestText)
+				InjectedRequests = append(InjectedRequests, NewHTTPRequest)
+			}
+
+		}
+	}
+
+	return InjectedRequests
 }

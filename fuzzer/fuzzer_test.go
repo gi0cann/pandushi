@@ -7,6 +7,54 @@ import (
 	"testing"
 )
 
+func TestInjectQueryParameters(t *testing.T) {
+	tests := []struct {
+		inputRequest     string
+		expectedRequests []string
+		injection        string
+	}{
+		{
+			`GET /test.php?foo=bar&hello=world HTTP/1.1
+Host: pbanner.gi0cann.io
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+			[]string{
+				"GET /test.php?foo=%3Cscript%3Ealert%281%29%3C%2Fscript%3E&hello=world HTTP/1.1\r\n",
+				"GET /test.php?foo=bar&hello=%3Cscript%3Ealert%281%29%3C%2Fscript%3E HTTP/1.1\r\n",
+			},
+			`<script>alert(1)</script>`,
+		},
+	}
+
+	for _, tt := range tests {
+		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		if err != nil {
+			t.Fatalf("Error create HTTPRequest from Bytes: %s\n", err)
+		}
+
+		InjectedRequests := request.InjectQueryParameters([]string{tt.injection})
+		//t.Log(InjectedRequests)
+
+		if len(tt.expectedRequests) != len(InjectedRequests) {
+			t.Fatalf("Expected HTTPRequest.InjectQueryParameters to return %d requests got %d\n", len(tt.expectedRequests), len(InjectedRequests))
+		}
+
+		for i, req := range tt.expectedRequests {
+			current := InjectedRequests[i]
+			firstline := strings.Split(current.RequestText, "\r\n")[0] + "\r\n"
+			if firstline != req {
+				t.Errorf("Injected request doesn't match expected request.\nexpected:\n%s\ngot:\n%s\n", req, firstline)
+			}
+		}
+	}
+}
+
 func TestCountJSONBody(t *testing.T) {
 	tests := []struct {
 		input         string
