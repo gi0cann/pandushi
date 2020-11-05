@@ -5,13 +5,15 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/gi0cann/pandushi/payloads"
 )
 
 func TestInjectQueryParameters(t *testing.T) {
 	tests := []struct {
 		inputRequest     string
 		expectedRequests []string
-		injection        string
+		injection        payloads.Payload
 	}{
 		{
 			`GET /test.php?foo=bar&hello=world HTTP/1.1
@@ -28,7 +30,10 @@ Connection: close
 				"GET /test.php?foo=%3Cscript%3Ealert%281%29%3C%2Fscript%3E&hello=world HTTP/1.1\r\n",
 				"GET /test.php?foo=bar&hello=%3Cscript%3Ealert%281%29%3C%2Fscript%3E HTTP/1.1\r\n",
 			},
-			`<script>alert(1)</script>`,
+			payloads.Payload{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
 		},
 	}
 
@@ -38,16 +43,16 @@ Connection: close
 			t.Fatalf("Error create HTTPRequest from Bytes: %s\n", err)
 		}
 
-		InjectedRequests := request.InjectQueryParameters([]string{tt.injection})
+		InjectedTestCases := request.InjectQueryParameters([]payloads.Payload{tt.injection})
 		//t.Log(InjectedRequests)
 
-		if len(tt.expectedRequests) != len(InjectedRequests) {
-			t.Fatalf("Expected HTTPRequest.InjectQueryParameters to return %d requests got %d\n", len(tt.expectedRequests), len(InjectedRequests))
+		if len(tt.expectedRequests) != len(InjectedTestCases) {
+			t.Fatalf("Expected HTTPRequest.InjectQueryParameters to return %d requests got %d\n", len(tt.expectedRequests), len(InjectedTestCases))
 		}
 
 		for i, req := range tt.expectedRequests {
-			current := InjectedRequests[i]
-			firstline := strings.Split(current.RequestText, "\r\n")[0] + "\r\n"
+			currentTestCase := InjectedTestCases[i]
+			firstline := strings.Split(currentTestCase.Request.RequestText, "\r\n")[0] + "\r\n"
 			if firstline != req {
 				t.Errorf("Injected request doesn't match expected request.\nexpected:\n%s\ngot:\n%s\n", req, firstline)
 			}

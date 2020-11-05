@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gi0cann/pandushi/payloads"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -284,13 +285,15 @@ func NewHTTPResponse(baseres *http.Response) (res HTTPResponse, err error) {
 
 // TestCase contain information about a fuzz case such as request, response, injection, etc.
 type TestCase struct {
-	Request        HTTPRequest
-	Response       HTTPResponse
-	Injection      string
-	InjectionType  string
-	InjectionPoint string
-	Duration       string
-	Status         string
+	BaseRequest        HTTPRequest
+	Request            HTTPRequest
+	Response           HTTPResponse
+	Injection          string
+	InjectionType      string
+	InjectionPoint     string
+	InjectionPointType string
+	Duration           string
+	Status             string
 }
 
 // Task represents a Fuzzer task
@@ -377,8 +380,8 @@ func (f Task) Run() {
 }
 
 // InjectQueryParameters Injects and array of payloads into a HTTPRequest's query parameters
-func (req *HTTPRequest) InjectQueryParameters(injections []string) []HTTPRequest {
-	var InjectedRequests []HTTPRequest
+func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []TestCase {
+	var InjectedTestCases []TestCase
 	query := req.Request.URL.Query()
 	for _, injection := range injections {
 		for k := range query {
@@ -386,7 +389,7 @@ func (req *HTTPRequest) InjectQueryParameters(injections []string) []HTTPRequest
 			for ik, v := range query {
 				NewQuery.Set(ik, strings.Join(v, ""))
 			}
-			NewQuery.Set(k, injection)
+			NewQuery.Set(k, injection.Value)
 			rawquery := NewQuery.Encode()
 			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
 			if err != nil {
@@ -403,11 +406,19 @@ func (req *HTTPRequest) InjectQueryParameters(injections []string) []HTTPRequest
 				//fmt.Printf("Original raw query: %s\n", req.Request.URL.RawQuery)
 				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
 				//fmt.Printf("Request text: %s\n", NewHTTPRequest.RequestText)
-				InjectedRequests = append(InjectedRequests, NewHTTPRequest)
+				InjectedTestCases = append(InjectedTestCases, TestCase{
+					BaseRequest:        *req,
+					Request:            NewHTTPRequest,
+					Injection:          injection.Value,
+					InjectionType:      injection.InputType,
+					InjectionPoint:     k,
+					InjectionPointType: "query",
+					Status:             "queued",
+				})
 			}
 
 		}
 	}
 
-	return InjectedRequests
+	return InjectedTestCases
 }

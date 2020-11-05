@@ -87,15 +87,20 @@ func main() {
 		//fuzzerTask := fuzzer.NewTask([]string{"XSS"}, request)
 		//fuzzerTask.Run()
 
-		InjectedRequests := request.InjectQueryParameters([]string{"<script>alert(1)</script>"})
-		for _, InjectedRequest := range InjectedRequests {
+		InjectedTestCases := request.InjectQueryParameters([]payloads.Payload{
+			{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		})
+		for _, InjectedTestCase := range InjectedTestCases {
 			// fmt.Printf("Request rawquery: %s\n", InjectedRequest.Request.URL.RawQuery)
 			// fmt.Printf("Request addr: %p\n", InjectedRequest.Request)
 			//fmt.Printf("Request text: %s\n", InjectedRequest.RequestText)
 			client := http.Client{
 				Timeout: time.Duration(5 * time.Second),
 			}
-			resp, err := client.Do(InjectedRequest.Request)
+			resp, err := client.Do(InjectedTestCase.Request.Request)
 			if err != nil {
 				fmt.Printf("Error: %s\n", err)
 				continue
