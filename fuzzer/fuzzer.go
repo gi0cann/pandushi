@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,19 +58,29 @@ func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
 	return req, nil
 }
 
-// ByteToJSONInterface takes a byte array as input and returns JSON inteface
-func ByteToJSONInterface(r io.ReadCloser) (interface{}, error) {
-	var JSONInterface interface{}
-	input, err := ioutil.ReadAll(r)
+// HTTPRequestToJSONInterface take a HTTPRequest pointer and returns a JSON interface
+func HTTPRequestToJSONInterface(req *HTTPRequest) (interface{}, error) {
+	JSONInterface, bodyBytes, err := ByteToJSONInterface(req.Request.Body)
+	req.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println(input)
+	return JSONInterface, nil
+}
+
+// ByteToJSONInterface takes a byte array as input and returns JSON inteface
+func ByteToJSONInterface(r io.ReadCloser) (interface{}, []byte, error) {
+	var JSONInterface interface{}
+	input, err := ioutil.ReadAll(r)
+	if err != nil {
+		return 0, input, err
+	}
+	//fmt.Println(input)
 	err = json.Unmarshal(input, &JSONInterface)
 	if err != nil {
-		return JSONInterface, err
+		return JSONInterface, input, err
 	}
-	return JSONInterface, nil
+	return JSONInterface, input, nil
 }
 
 //CountJSONBody take http.Request and return total amount of parameters
@@ -102,7 +111,7 @@ func CountJSONBody(jsoni interface{}) int8 {
 
 			}
 		case bool:
-			fmt.Printf("Bool: %s:%T\n", k, v)
+			//fmt.Printf("Bool: %s:%T\n", k, v)
 			count++
 		case map[string]interface{}:
 			count += CountJSONBody(v)
@@ -142,11 +151,16 @@ func (req *HTTPRequest) CountInjectionPoints() {
 	req.TotalInjectionPoints += req.TotalCookieInjectionPoints
 	ContentType := r.Header.Get("content-type")
 	if ContentType == "application/x-www-form-urlencoded" {
-		err := r.ParseForm()
+		body, err := ioutil.ReadAll(req.Request.Body)
+		if err == nil {
+			req.Request.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+		}
+		err = r.ParseForm()
 		if err == nil {
 			req.TotalBodyInjectionPoints = int8(len(r.PostForm))
 			req.TotalInjectionPoints += req.TotalBodyInjectionPoints
 		}
+		req.Request.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 	} else if strings.Contains(ContentType, "multipart/form-data") {
 		err := r.ParseMultipartForm(4096000)
 		if err == nil {
@@ -155,7 +169,7 @@ func (req *HTTPRequest) CountInjectionPoints() {
 			req.TotalInjectionPoints += req.TotalBodyInjectionPoints
 		}
 	} else if strings.Contains(ContentType, "application/json") {
-		JSONInterface, err := ByteToJSONInterface(r.Body)
+		JSONInterface, err := HTTPRequestToJSONInterface(req)
 		if err != nil {
 			fmt.Println("ContInjectionPoints", err)
 		} else {
@@ -164,7 +178,7 @@ func (req *HTTPRequest) CountInjectionPoints() {
 			req.TotalInjectionPoints += jsoncount
 		}
 	} else if strings.Contains(ContentType, "text/plain") {
-		JSONInterface, err := ByteToJSONInterface(r.Body)
+		JSONInterface, err := HTTPRequestToJSONInterface(req)
 		if err != nil {
 			fmt.Println("ContInjectionPoints", err)
 		} else {
@@ -202,9 +216,10 @@ func RequestToString(r *http.Request) (string, error) {
 	if err != nil {
 		return RequestStr.String(), err
 	}
-	if r.ContentLength != -1 {
-		r.Header.Set("Content-Lenght", strconv.FormatInt(int64(len(body)), 10))
-	}
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	// if r.ContentLength != -1 {
+	// 	r.Header.Set("Content-Lenght", strconv.FormatInt(int64(len(body)), 10))
+	// }
 	for key, header := range r.Header {
 		RequestStr.WriteString(key + ": " + strings.Join(header, " ") + "\r\n")
 	}
@@ -379,7 +394,7 @@ func (f Task) Run() {
 	f.End = time.Now()
 }
 
-// InjectQueryParameters Injects and array of payloads into a HTTPRequest's query parameters
+// InjectQueryParameters take an array of payloads and return an array of TestCases with the payloads injected into query parameters
 func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []TestCase {
 	var InjectedTestCases []TestCase
 	query := req.Request.URL.Query()
@@ -400,9 +415,9 @@ func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []T
 				if err == nil {
 					NewHTTPRequest.RequestText = NewRequestText
 				}
-				fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
-				fmt.Printf("Request rawquery addr: %p\n", &NewHTTPRequest.Request.URL.RawQuery)
-				fmt.Printf("Request addr: %p\n", NewHTTPRequest.Request)
+				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
+				//fmt.Printf("Request rawquery addr: %p\n", &NewHTTPRequest.Request.URL.RawQuery)
+				//fmt.Printf("Request addr: %p\n", NewHTTPRequest.Request)
 				//fmt.Printf("Original raw query: %s\n", req.Request.URL.RawQuery)
 				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
 				//fmt.Printf("Request text: %s\n", NewHTTPRequest.RequestText)
@@ -417,6 +432,56 @@ func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []T
 				})
 			}
 
+		}
+	}
+
+	return InjectedTestCases
+}
+
+func arrayContains(arr []string, item string) bool {
+	for _, v := range arr {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+
+// InjectHeaders takes a array of payloads and returns an array of TestCases with the payloads injected in the headers
+func (req *HTTPRequest) InjectHeaders(injections []payloads.Payload) []TestCase {
+	exclusions := []string{
+		"cookie",
+		"content-length",
+		"connection",
+	}
+	var InjectedTestCases []TestCase
+	headers := req.Request.Header
+	for _, injection := range injections {
+		for k := range headers {
+			NewHeaders := headers.Clone()
+			if arrayContains(exclusions, strings.ToLower(k)) {
+				continue
+			}
+			NewHeaders.Set(k, injection.Value)
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			if err != nil {
+				fmt.Printf("Error Creating HTTPRequest: %s", err)
+			} else {
+				NewHTTPRequest.Request.Header = NewHeaders
+				NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+				if err == nil {
+					NewHTTPRequest.RequestText = NewRequestText
+				}
+				InjectedTestCases = append(InjectedTestCases, TestCase{
+					BaseRequest:        *req,
+					Request:            NewHTTPRequest,
+					Injection:          injection.Value,
+					InjectionType:      injection.InputType,
+					InjectionPoint:     k,
+					InjectionPointType: "headers",
+					Status:             "queued",
+				})
+			}
 		}
 	}
 

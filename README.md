@@ -18,7 +18,7 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 - [x] Create custom http response type
 - [x] Create TestCase type to countain information about each individual injection (Request, Response, injection, injection type, injeciton point type, injection point location, total duration, status, response code)
 - [x] Create function to count total injection points, url path injection points, query injection points, header injection points, cookie injection points, body injection points
-- [ ] Inject request headers
+- [x] Inject request headers
 - [ ] Inject request body x-www-form-urlencoded parameters
 - [ ] Inject request body multipart/form-data parameters
 - [ ] Inject request body application/json parameters

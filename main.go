@@ -87,16 +87,24 @@ func main() {
 		//fuzzerTask := fuzzer.NewTask([]string{"XSS"}, request)
 		//fuzzerTask.Run()
 
-		InjectedTestCases := request.InjectQueryParameters([]payloads.Payload{
+		InjectedTestCases := request.InjectHeaders([]payloads.Payload{
 			{
 				Value:     "<script>alert(1)</script>",
 				InputType: "xss",
 			},
 		})
+		QueryCases := request.InjectQueryParameters([]payloads.Payload{
+			{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		})
+		InjectedTestCases = append(InjectedTestCases, QueryCases...)
 		for _, InjectedTestCase := range InjectedTestCases {
 			// fmt.Printf("Request rawquery: %s\n", InjectedRequest.Request.URL.RawQuery)
 			// fmt.Printf("Request addr: %p\n", InjectedRequest.Request)
-			//fmt.Printf("Request text: %s\n", InjectedRequest.RequestText)
+			fmt.Printf("Request text: %s\n", InjectedTestCase.Request.RequestText)
+
 			client := http.Client{
 				Timeout: time.Duration(5 * time.Second),
 			}
@@ -113,6 +121,7 @@ func main() {
 			}
 
 			fmt.Printf("response:\n%s\n", httpres.ResponseText)
+
 		}
 
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {

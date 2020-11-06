@@ -9,6 +9,56 @@ import (
 	"github.com/gi0cann/pandushi/payloads"
 )
 
+func TestInjectHeaders(t *testing.T) {
+	tests := []struct {
+		inputRequest           string
+		expectedTotalTestCases int8
+		injection              payloads.Payload
+	}{
+		{
+			`GET /test.php?foo=bar&hello=world HTTP/1.1
+Host: pbanner.gi0cann.io
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+			int8(5),
+			payloads.Payload{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		count := int8(0)
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		if err != nil {
+			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes")
+		}
+
+		TestCases := req.InjectHeaders([]payloads.Payload{tt.injection})
+
+		for _, TestCase := range TestCases {
+			headers := TestCase.Request.Request.Header
+			for k := range headers {
+				if headers.Get(k) == tt.injection.Value {
+					count++
+				}
+			}
+		}
+
+		if count != tt.expectedTotalTestCases {
+			t.Errorf("Expected: %d TotalTestCases got: %d", tt.expectedTotalTestCases, count)
+		}
+	}
+
+}
+
 func TestInjectQueryParameters(t *testing.T) {
 	tests := []struct {
 		inputRequest     string
@@ -89,7 +139,7 @@ func TestCountJSONBody(t *testing.T) {
 
 	for _, tt := range tests {
 		reader := ioutil.NopCloser(strings.NewReader(tt.input))
-		JSONInterface, err := ByteToJSONInterface(reader)
+		JSONInterface, _, err := ByteToJSONInterface(reader)
 		if err != nil {
 			t.Fatalf("Error parsing JSON string: %s\n", err)
 		}
@@ -357,3 +407,95 @@ Accept-Language: en-US,en;q=0.9
 	}
 
 }
+
+// func TestRequestToString(t *testing.T) {
+// 	tests := []struct {
+// 		inputRequest    string
+// 		expectedRequest string
+// 	}{
+// 		{
+// 			`POST /test.php HTTP/1.1
+// Host: pbanner.gi0cann.io
+// Upgrade-Insecure-Requests: 1
+// User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+// Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+// Accept-Encoding: gzip, deflate
+// Accept-Language: en-US,en;q=0.9
+// Connection: close
+// Content-Type: application/x-www-form-urlencoded
+// Content-Length: 19
+
+// foo=bar&hello=world`,
+// 			`POST /test.php HTTP/1.1
+// Host: pbanner.gi0cann.io
+// Upgrade-Insecure-Requests: 1
+// User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+// Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+// Accept-Encoding: gzip, deflate
+// Accept-Language: en-US,en;q=0.9
+// Connection: close
+// Content-Type: application/x-www-form-urlencoded
+// Content-Length: 19
+
+// foo=bar&hello=world`,
+// 		},
+// 		{
+// 			`POST /api/v2/client/sites/1783312/visit-data?sv=6 HTTP/1.1
+// Host: in.hotjar.com
+// Connection: close
+// Content-Length: 209
+// User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+// Content-Type: application/json; charset=UTF-8
+// Accept: */*
+// Origin: https://www.logitech.com
+// Sec-Fetch-Site: cross-site
+// Sec-Fetch-Mode: cors
+// Sec-Fetch-Dest: empty
+// Referer: https://www.logitech.com/
+// Accept-Encoding: gzip, deflate
+// Accept-Language: en-US,en;q=0.9
+
+// {"hello":[34.4,34],"window_width":956,"window_height":1098,"url":"https://www.logitech.com/en-us","r_value":1,"is_vpv":false,"session_only":false,"rec_value":1,"user_id":"c5da6a65-eb05-5eac-9867-36ce7342d1c0"}`,
+// 			`POST /api/v2/client/sites/1783312/visit-data?sv=6 HTTP/1.1
+// Host: in.hotjar.com
+// Connection: close
+// Content-Length: 209
+// User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+// Content-Type: application/json; charset=UTF-8
+// Accept: */*
+// Origin: https://www.logitech.com
+// Sec-Fetch-Site: cross-site
+// Sec-Fetch-Mode: cors
+// Sec-Fetch-Dest: empty
+// Referer: https://www.logitech.com/
+// Accept-Encoding: gzip, deflate
+// Accept-Language: en-US,en;q=0.9
+
+// {"hello":[34.4,34],"window_width":956,"window_height":1098,"url":"https://www.logitech.com/en-us","r_value":1,"is_vpv":false,"session_only":false,"rec_value":1,"user_id":"c5da6a65-eb05-5eac-9867-36ce7342d1c0"}`,
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+// 		if err != nil {
+// 			t.Fatalf("Error creating request from bytes: %s", err)
+// 		}
+// 		requeststr, err := RequestToString(req.Request)
+// 		if err != nil {
+// 			t.Fatalf("Error converting request to string: %s", err)
+// 		}
+
+// 		t.Logf("RequestText:\n%s\n", requeststr)
+// 		if tt.expectedRequest != requeststr {
+// 			t.Errorf("expected:\n%s\ngot:\n%s\n", tt.expectedRequest, requeststr)
+// 			body, err := ioutil.ReadAll(req.Request.Body)
+// 			if err != nil {
+// 				t.Errorf("Error reading body: %s\n", err)
+// 			}
+// 			t.Errorf("Body: %s\n len: %d", body, len(body))
+// 			for k, v := range req.Request.Form {
+// 				t.Errorf("K: %s, v: %s\n", k, v)
+// 			}
+// 		}
+// 	}
+// }
