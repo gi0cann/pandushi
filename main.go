@@ -100,6 +100,13 @@ func main() {
 			},
 		})
 		InjectedTestCases = append(InjectedTestCases, QueryCases...)
+		URLEncodeBodyCases := request.InjectFormURLEncodedBody([]payloads.Payload{
+			{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		})
+		InjectedTestCases = append(InjectedTestCases, URLEncodeBodyCases...)
 		for _, InjectedTestCase := range InjectedTestCases {
 			// fmt.Printf("Request rawquery: %s\n", InjectedRequest.Request.URL.RawQuery)
 			// fmt.Printf("Request addr: %p\n", InjectedRequest.Request)

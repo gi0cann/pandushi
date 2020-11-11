@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -479,6 +480,52 @@ func (req *HTTPRequest) InjectHeaders(injections []payloads.Payload) []TestCase 
 					InjectionType:      injection.InputType,
 					InjectionPoint:     k,
 					InjectionPointType: "headers",
+					Status:             "queued",
+				})
+			}
+		}
+	}
+
+	return InjectedTestCases
+}
+
+// InjectFormURLEncodedBody takes a array of payloads and return an array of TestCases with the payloads injected in a x-www-form-urlencoded HTTP request body
+func (req *HTTPRequest) InjectFormURLEncodedBody(injections []payloads.Payload) []TestCase {
+	var InjectedTestCases []TestCase
+	ContentType := req.Request.Header.Get("Content-Type")
+	if ContentType == "x-www-form-urlencoded" {
+		return InjectedTestCases
+	}
+	PostBody := req.Request.PostForm
+	for _, injection := range injections {
+		for k := range PostBody {
+			NewPostBody := url.Values{}
+			for ik, v := range PostBody {
+				NewPostBody.Set(ik, strings.Join(v, ""))
+			}
+			NewPostBody.Set(k, injection.Value)
+			rawbody := NewPostBody.Encode()
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			if err != nil {
+				fmt.Printf("Error Creating HTTPRequest: %s", err)
+			} else {
+				NewHTTPRequest.Request.Body = ioutil.NopCloser(bytes.NewBuffer([]byte(rawbody)))
+				NewHTTPRequest.Request.Header.Set("Content-Length", strconv.Itoa(len(rawbody)))
+				NewHTTPRequest.Request.ContentLength = 0
+				NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+				if err == nil {
+					NewHTTPRequest.RequestText = NewRequestText
+				}
+				NewHTTPRequest.Request.PostForm = nil
+				NewHTTPRequest.Request.Form = nil
+				NewHTTPRequest.Request.ParseForm()
+				InjectedTestCases = append(InjectedTestCases, TestCase{
+					BaseRequest:        *req,
+					Request:            NewHTTPRequest,
+					Injection:          injection.Value,
+					InjectionType:      injection.InputType,
+					InjectionPoint:     k,
+					InjectionPointType: "x-www-form-urlencoded",
 					Status:             "queued",
 				})
 			}
