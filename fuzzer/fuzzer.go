@@ -573,7 +573,6 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 				replacer := submatch[1]
 				injected = pattern.ReplaceAll(injected, replacer)
 			}
-			fmt.Println(string(injected))
 			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s", err)
@@ -599,84 +598,6 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 	}
 
 	return InjectedTestCases
-}
-
-func InjectJSON(jsoni *interface{}, InjectedTestCases *[]TestCase, BaseRequest *HTTPRequest, injection payloads.Payload) {
-	fmt.Println("InjectJSON call")
-	m := (*jsoni).(map[string]interface{})
-	for k, v := range m {
-		switch vv := v.(type) {
-		case []interface{}:
-			for ki, vi := range vv {
-				switch vi.(type) {
-				case map[string]interface{}:
-					InjectJSON(&vi, InjectedTestCases, BaseRequest, injection)
-				default:
-					// newinterface, err := HTTPRequestToJSONInterface(BaseRequest)
-					// jsonmap := newinterface.(map[string]interface{})
-					// v = injection.Value
-					// jsonmap[k] = v
-					vv[ki] = injection.Value
-					fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
-					testcase, err := CreateJSONTestCase(BaseRequest, injection, k, m)
-					if err != nil {
-						continue
-					}
-					*InjectedTestCases = append(*InjectedTestCases, testcase)
-				}
-			}
-		case map[string]interface{}:
-			InjectJSON(&v, InjectedTestCases, BaseRequest, injection)
-		default:
-			fmt.Printf("String: %s:%s\n", k, v)
-			newinterface, err := HTTPRequestToJSONInterface(BaseRequest)
-			jsonmap := newinterface.(map[string]interface{})
-			jsonmap[k] = injection.Value
-			testcase, err := CreateJSONTestCase(BaseRequest, injection, k, jsonmap)
-			if err != nil {
-				continue
-			}
-			*InjectedTestCases = append(*InjectedTestCases, testcase)
-		}
-	}
-
-}
-
-func CreateJSONTestCase(BaseRequest *HTTPRequest, injection payloads.Payload, injectionPoint string, jsoninterface interface{}) (TestCase, error) {
-	var b []byte
-	var InjectedTestCase TestCase
-	buf := bytes.NewBuffer(b)
-	enc := json.NewEncoder(buf)
-	enc.SetEscapeHTML(false)
-	// jsoninterface, err := HTTPRequestToJSONInterface(BaseRequest)
-	// if err != nil {
-	// 	fmt.Printf("HTTPRequestToJSONInterface error: %s\n", err)
-	// 	return InjectedTestCase, err
-	// }
-	// jsonmap := jsoninterface.(map[string]interface{})
-	// jsonmap[injectionPoint] = injection.Value
-	NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(BaseRequest.RequestText))
-	if err != nil {
-		fmt.Printf("Error Creating HTTPRequest: %s", err)
-		return InjectedTestCase, err
-	}
-	err = enc.Encode(jsoninterface)
-	NewHTTPRequest.Request.Body = ioutil.NopCloser(buf)
-	NewHTTPRequest.Request.ContentLength = 0
-	NewRequestText, err := RequestToString(NewHTTPRequest.Request)
-	if err == nil {
-		NewHTTPRequest.RequestText = NewRequestText
-	}
-	InjectedTestCase = TestCase{
-		BaseRequest:        *BaseRequest,
-		Request:            NewHTTPRequest,
-		Injection:          injection.Value,
-		InjectionType:      injection.InputType,
-		InjectionPoint:     injectionPoint,
-		InjectionPointType: "json",
-		Status:             "queued",
-	}
-	return InjectedTestCase, nil
 }
 
 func MarkJSON(data interface{}, count *int, marks *[]string, marker string) interface{} {
