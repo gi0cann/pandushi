@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -107,8 +108,9 @@ func CountJSONBody(jsoni interface{}) int8 {
 				switch vi.(type) {
 				case map[string]interface{}:
 					count += CountJSONBody(vi)
+				default:
+					count++
 				}
-				count++
 
 			}
 		case bool:
@@ -533,4 +535,185 @@ func (req *HTTPRequest) InjectFormURLEncodedBody(injections []payloads.Payload) 
 	}
 
 	return InjectedTestCases
+}
+
+// InjectJSONParameters takes a array of payloads and returns a array of TestCases with the payloads injected in the JSON body of each HTTP request
+func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []TestCase {
+	var InjectedTestCases []TestCase
+	var marks []string
+	count := 0
+	ContentType := req.Request.Header.Get("Content-Type")
+	if !(strings.Contains(ContentType, "application/json") || strings.Contains(ContentType, "application/text")) {
+		fmt.Printf("Not JSON %s\n", ContentType)
+		return InjectedTestCases
+	}
+	JSONInterface, err := HTTPRequestToJSONInterface(req)
+	if err != nil {
+		fmt.Printf("HTTPRequestToJSONInterface error: %s\n", err)
+		return InjectedTestCases
+	}
+	m := JSONInterface.(map[string]interface{})
+	MarkedJSONInterface := MarkJSON(m, &count, &marks, `§`)
+	jsonBytes, err := json.Marshal(MarkedJSONInterface)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	for _, injection := range injections {
+		for _, v := range marks {
+			pattern := regexp.MustCompile(`§` + v + `.*?§`)
+			injected := pattern.ReplaceAll(jsonBytes, []byte(injection.Value))
+			for _, vi := range marks {
+				pattern := regexp.MustCompile(`§` + vi + `.*?§`)
+				pattern2 := regexp.MustCompile(`§` + vi + `(.*?)§`)
+				submatch := pattern2.FindSubmatch(injected)
+				if len(submatch) != 2 {
+					continue
+				}
+				replacer := submatch[1]
+				injected = pattern.ReplaceAll(injected, replacer)
+			}
+			fmt.Println(string(injected))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			if err != nil {
+				fmt.Printf("Error Creating HTTPRequest: %s", err)
+			} else {
+				NewHTTPRequest.Request.Body = ioutil.NopCloser(bytes.NewBuffer([]byte(injected)))
+				NewHTTPRequest.Request.Header.Set("Content-Length", strconv.Itoa(len(injected)))
+				NewHTTPRequest.Request.ContentLength = 0
+				NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+				if err == nil {
+					NewHTTPRequest.RequestText = NewRequestText
+				}
+				InjectedTestCases = append(InjectedTestCases, TestCase{
+					BaseRequest:        *req,
+					Request:            NewHTTPRequest,
+					Injection:          injection.Value,
+					InjectionType:      injection.InputType,
+					InjectionPoint:     "",
+					InjectionPointType: "json",
+					Status:             "queued",
+				})
+			}
+		}
+	}
+
+	return InjectedTestCases
+}
+
+func InjectJSON(jsoni *interface{}, InjectedTestCases *[]TestCase, BaseRequest *HTTPRequest, injection payloads.Payload) {
+	fmt.Println("InjectJSON call")
+	m := (*jsoni).(map[string]interface{})
+	for k, v := range m {
+		switch vv := v.(type) {
+		case []interface{}:
+			for ki, vi := range vv {
+				switch vi.(type) {
+				case map[string]interface{}:
+					InjectJSON(&vi, InjectedTestCases, BaseRequest, injection)
+				default:
+					// newinterface, err := HTTPRequestToJSONInterface(BaseRequest)
+					// jsonmap := newinterface.(map[string]interface{})
+					// v = injection.Value
+					// jsonmap[k] = v
+					vv[ki] = injection.Value
+					fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
+					testcase, err := CreateJSONTestCase(BaseRequest, injection, k, m)
+					if err != nil {
+						continue
+					}
+					*InjectedTestCases = append(*InjectedTestCases, testcase)
+				}
+			}
+		case map[string]interface{}:
+			InjectJSON(&v, InjectedTestCases, BaseRequest, injection)
+		default:
+			fmt.Printf("String: %s:%s\n", k, v)
+			newinterface, err := HTTPRequestToJSONInterface(BaseRequest)
+			jsonmap := newinterface.(map[string]interface{})
+			jsonmap[k] = injection.Value
+			testcase, err := CreateJSONTestCase(BaseRequest, injection, k, jsonmap)
+			if err != nil {
+				continue
+			}
+			*InjectedTestCases = append(*InjectedTestCases, testcase)
+		}
+	}
+
+}
+
+func CreateJSONTestCase(BaseRequest *HTTPRequest, injection payloads.Payload, injectionPoint string, jsoninterface interface{}) (TestCase, error) {
+	var b []byte
+	var InjectedTestCase TestCase
+	buf := bytes.NewBuffer(b)
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	// jsoninterface, err := HTTPRequestToJSONInterface(BaseRequest)
+	// if err != nil {
+	// 	fmt.Printf("HTTPRequestToJSONInterface error: %s\n", err)
+	// 	return InjectedTestCase, err
+	// }
+	// jsonmap := jsoninterface.(map[string]interface{})
+	// jsonmap[injectionPoint] = injection.Value
+	NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(BaseRequest.RequestText))
+	if err != nil {
+		fmt.Printf("Error Creating HTTPRequest: %s", err)
+		return InjectedTestCase, err
+	}
+	err = enc.Encode(jsoninterface)
+	NewHTTPRequest.Request.Body = ioutil.NopCloser(buf)
+	NewHTTPRequest.Request.ContentLength = 0
+	NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+	if err == nil {
+		NewHTTPRequest.RequestText = NewRequestText
+	}
+	InjectedTestCase = TestCase{
+		BaseRequest:        *BaseRequest,
+		Request:            NewHTTPRequest,
+		Injection:          injection.Value,
+		InjectionType:      injection.InputType,
+		InjectionPoint:     injectionPoint,
+		InjectionPointType: "json",
+		Status:             "queued",
+	}
+	return InjectedTestCase, nil
+}
+
+func MarkJSON(data interface{}, count *int, marks *[]string, marker string) interface{} {
+
+	if reflect.ValueOf(data).Kind() == reflect.Slice {
+		d := reflect.ValueOf(data)
+		tmpData := make([]interface{}, d.Len())
+		returnSlice := make([]interface{}, d.Len())
+		for i := 0; i < d.Len(); i++ {
+			tmpData[i] = d.Index(i).Interface()
+		}
+		for i, v := range tmpData {
+			typeOfValue := reflect.TypeOf(v).Kind()
+			if typeOfValue == reflect.Map || typeOfValue == reflect.Slice {
+				returnSlice[i] = MarkJSON(v, count, marks, marker)
+			} else {
+				returnSlice[i] = marker + strconv.Itoa(*count) + reflect.ValueOf(v).String() + marker
+				*marks = append(*marks, strconv.Itoa(*count))
+				*count++
+			}
+		}
+		return returnSlice
+	} else if reflect.ValueOf(data).Kind() == reflect.Map {
+		d := reflect.ValueOf(data)
+		tmpData := make(map[string]interface{})
+		for _, k := range d.MapKeys() {
+			typeOfValue := reflect.TypeOf(d.MapIndex(k).Interface()).Kind()
+			if typeOfValue == reflect.Map || typeOfValue == reflect.Slice {
+				tmpData[k.String()] = MarkJSON(d.MapIndex(k).Interface(), count, marks, marker)
+			} else {
+				tmpData[k.String()] = marker + strconv.Itoa(*count) + reflect.ValueOf(d.MapIndex(k).Interface()).String() + marker
+				*marks = append(*marks, strconv.Itoa(*count))
+				*count++
+			}
+		}
+		return tmpData
+	}
+
+	return data
 }

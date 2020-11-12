@@ -87,26 +87,20 @@ func main() {
 		//fuzzerTask := fuzzer.NewTask([]string{"XSS"}, request)
 		//fuzzerTask.Run()
 
-		InjectedTestCases := request.InjectHeaders([]payloads.Payload{
+		payloadArr := []payloads.Payload{
 			{
 				Value:     "<script>alert(1)</script>",
 				InputType: "xss",
 			},
-		})
-		QueryCases := request.InjectQueryParameters([]payloads.Payload{
-			{
-				Value:     "<script>alert(1)</script>",
-				InputType: "xss",
-			},
-		})
+		}
+
+		InjectedTestCases := request.InjectHeaders(payloadArr)
+		QueryCases := request.InjectQueryParameters(payloadArr)
 		InjectedTestCases = append(InjectedTestCases, QueryCases...)
-		URLEncodeBodyCases := request.InjectFormURLEncodedBody([]payloads.Payload{
-			{
-				Value:     "<script>alert(1)</script>",
-				InputType: "xss",
-			},
-		})
+		URLEncodeBodyCases := request.InjectFormURLEncodedBody(payloadArr)
 		InjectedTestCases = append(InjectedTestCases, URLEncodeBodyCases...)
+		JSONTestCases := request.InjectJSONParameters(payloadArr)
+		InjectedTestCases = append(InjectedTestCases, JSONTestCases...)
 		for _, InjectedTestCase := range InjectedTestCases {
 			// fmt.Printf("Request rawquery: %s\n", InjectedRequest.Request.URL.RawQuery)
 			// fmt.Printf("Request addr: %p\n", InjectedRequest.Request)
@@ -130,6 +124,7 @@ func main() {
 			fmt.Printf("response:\n%s\n", httpres.ResponseText)
 
 		}
+		fmt.Printf("JSON cases: %d\n", len(JSONTestCases))
 
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)

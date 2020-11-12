@@ -9,6 +9,69 @@ import (
 	"github.com/gi0cann/pandushi/payloads"
 )
 
+func TestInjectJSONParameters(t *testing.T) {
+	tests := []struct {
+		inputRequest           string
+		expectedTotalTestCases int8
+		injection              payloads.Payload
+	}{
+		{
+			`POST /test.php HTTP/1.1
+Host: pbanner.gi0cann.io
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/json
+Content-Length: 45
+
+{"foo":"bar", "hello":"world", "bar": "foo"}`,
+			int8(3),
+			payloads.Payload{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		},
+		{
+			`POST /test.php HTTP/1.1
+Host: pbanner.gi0cann.io
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/json
+Content-Length: 114
+
+{"test": [{"hello":"world", "pizza":"cheese", "foo": ["a", "b", "c"]}], "go": {"1": "3", "2": ["hello", "world"]}}`,
+			int8(8),
+			payloads.Payload{
+				Value:     "<script>alert(1)</script>",
+				InputType: "xss",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		count := int8(0)
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		if err != nil {
+			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes: %s", err)
+		}
+
+		TestCases := req.InjectJSONParameters([]payloads.Payload{tt.injection})
+
+		count = int8(len(TestCases))
+
+		if count != tt.expectedTotalTestCases {
+			t.Errorf("Expected: %d TotalTestCases got: %d", tt.expectedTotalTestCases, count)
+		}
+	}
+}
+
 func TestInjectFormURLEncodedBody(t *testing.T) {
 	tests := []struct {
 		inputRequest           string
@@ -203,7 +266,11 @@ func TestCountJSONBody(t *testing.T) {
 		},
 		{
 			`{"test": [{"hello":"world", "pizza":"cheese"}]}`,
-			3,
+			2,
+		},
+		{
+			`{"test": [{"hello":"world", "pizza":"cheese", "foo": ["a", "b", "c"]}], "go": {"1": "3", "2": ["hello", "world"]}}`,
+			8,
 		},
 	}
 
