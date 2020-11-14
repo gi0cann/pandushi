@@ -314,6 +314,44 @@ type TestCase struct {
 	Status             string
 }
 
+// SupportedInjectionPointTypes is a list of supported injection point types
+var SupportedInjectionPointTypes = []string{
+	"QUERY",
+	"JSON",
+	"FORM_URLENCODE",
+	"HEADER",
+}
+
+// CreateTestCases takes a arrays of InjectionPointType, InjectionType, and a mongodbURI and returns an array of TestCases
+func CreateTestCases(injectionpointtypes []string, injectiontypes []string, mongodbURI string, request HTTPRequest) ([]TestCase, error) {
+	var testcases []TestCase
+	payloadArr, err := payloads.CreatePayloadsFromInputTypes(injectiontypes, mongodbURI)
+	if err != nil {
+		return testcases, err
+	}
+
+	for _, injectionpointtype := range injectionpointtypes {
+		injectionpointtype = strings.ToUpper(injectionpointtype)
+		if injectionpointtype == "QUERY" {
+			testcases = append(testcases, request.InjectQueryParameters(payloadArr)...)
+		}
+
+		if injectionpointtype == "JSON" {
+			testcases = append(testcases, request.InjectJSONParameters(payloadArr)...)
+		}
+
+		if injectionpointtype == "FORM_URLENCODE" {
+			testcases = append(testcases, request.InjectFormURLEncodedBody(payloadArr)...)
+		}
+
+		if injectionpointtype == "HEADER" {
+			testcases = append(testcases, request.InjectHeaders(payloadArr)...)
+		}
+	}
+
+	return testcases, nil
+}
+
 // Task represents a Fuzzer task
 type Task struct {
 	InjectionTypes []string
@@ -325,21 +363,27 @@ type Task struct {
 }
 
 // NewTask takes a list of InjectionTypes and HTTPRequest and returns a FuzzerTask
-func NewTask(InjectionTypes []string, BaseRequest HTTPRequest) Task {
-	task := Task{
+func NewTask(InjectionTypes []string, InjectionPointTypes []string, BaseRequest HTTPRequest, mongodbURI string) (Task, error) {
+	var task Task
+	TestCases, err := CreateTestCases(InjectionPointTypes, InjectionTypes, mongodbURI, BaseRequest)
+	if err != nil {
+		return task, err
+	}
+	task = Task{
 		InjectionTypes: InjectionTypes,
 		BaseRequest:    BaseRequest,
+		TestCases:      TestCases,
 	}
 
-	return task
+	return task, nil
 }
 
 // Run starts and run a fuzzer Task
-func (f Task) Run() {
+func (f *Task) Run() {
 	f.Start = time.Now()
 	var mutex = &sync.Mutex{}
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for _, testcase := range f.TestCases {
 		wg.Add(1)
 		mutex.Lock()
 		go func() {
@@ -362,14 +406,11 @@ func (f Task) Run() {
 			httpclient := http.Client{
 				Timeout: time.Duration(5 * time.Second),
 			}
-			reqstr, err := RequestToString(f.BaseRequest.Request)
-			if err != nil {
-				fmt.Println(err)
-			}
+			reqstr := testcase.Request.RequestText
 
 			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
 
-			resp, err := httpclient.Do(f.BaseRequest.Request)
+			resp, err := httpclient.Do(testcase.Request.Request)
 			if err != nil {
 				fmt.Println(err)
 			} else {
@@ -379,9 +420,10 @@ func (f Task) Run() {
 				} else {
 					//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
 					//fmt.Println(httpres.ResponseText)
+					testcase.Response = httpres
 					taskResult, err := taskCollection.InsertOne(ctx, bson.D{
 						{Key: "Request", Value: reqstr},
-						{Key: "Response", Value: httpres.ResponseText},
+						{Key: "Response", Value: testcase.Response.ResponseText},
 					})
 					if err != nil {
 						log.Println(err)
@@ -396,6 +438,69 @@ func (f Task) Run() {
 	wg.Wait()
 	f.End = time.Now()
 }
+
+// // Run starts and run a fuzzer Task
+// func (f *Task) Run() {
+// 	f.Start = time.Now()
+// 	var mutex = &sync.Mutex{}
+// 	var wg sync.WaitGroup
+// 	for i := 0; i < 10; i++ {
+// 		wg.Add(1)
+// 		mutex.Lock()
+// 		go func() {
+// 			defer wg.Done()
+// 			mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+// 			if err != nil {
+// 				panic(err)
+// 			}
+// 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// 			err = mclient.Connect(ctx)
+// 			if err != nil {
+// 				panic(err)
+// 			}
+// 			defer mclient.Disconnect(ctx)
+// 			defer cancel()
+
+// 			pandushiDB := mclient.Database("pandushi")
+// 			taskCollection := pandushiDB.Collection("tasks")
+
+// 			httpclient := http.Client{
+// 				Timeout: time.Duration(5 * time.Second),
+// 			}
+// 			reqstr, err := RequestToString(f.BaseRequest.Request)
+// 			if err != nil {
+// 				fmt.Println(err)
+// 			}
+
+// 			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
+
+// 			resp, err := httpclient.Do(f.BaseRequest.Request)
+// 			if err != nil {
+// 				fmt.Println(err)
+// 			} else {
+// 				httpres, err := NewHTTPResponse(resp)
+// 				if err != nil {
+// 					fmt.Println(err)
+// 				} else {
+// 					//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
+// 					//fmt.Println(httpres.ResponseText)
+// 					taskResult, err := taskCollection.InsertOne(ctx, bson.D{
+// 						{Key: "Request", Value: reqstr},
+// 						{Key: "Response", Value: httpres.ResponseText},
+// 					})
+// 					if err != nil {
+// 						log.Println(err)
+// 					} else {
+// 						log.Println(taskResult.InsertedID)
+// 					}
+// 				}
+// 			}
+// 		}()
+// 		mutex.Unlock()
+// 	}
+// 	wg.Wait()
+// 	f.End = time.Now()
+// }
 
 // InjectQueryParameters take an array of payloads and return an array of TestCases with the payloads injected into query parameters
 func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []TestCase {
