@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/gi0cann/pandushi/payloads"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -314,6 +313,30 @@ type TestCase struct {
 	Status             string
 }
 
+// SerializedTestCase is the BSON serialized version of TestCase
+type SerializedTestCase struct {
+	Request            string `bson:"request,omitempty"`
+	Response           string `bson:"response,omitempty"`
+	Injection          string `bson:"injection,omitempty"`
+	InjectionType      string `bson:"injectiontype,omitempty"`
+	InjectionPoint     string `bson:"injectionpoint,omitempty"`
+	InjectionPointType string `bson:"injectionpointtype,omitempty"`
+	Duration           string `bson:"duration,omitempty"`
+}
+
+// Serialize return a serialize version of TestCase
+func (TC *TestCase) Serialize() SerializedTestCase {
+	return SerializedTestCase{
+		Request:            TC.Request.RequestText,
+		Response:           TC.Response.ResponseText,
+		Injection:          TC.Injection,
+		InjectionType:      TC.InjectionType,
+		InjectionPoint:     TC.InjectionPoint,
+		InjectionPointType: TC.InjectionPointType,
+		Duration:           TC.Duration,
+	}
+}
+
 // SupportedInjectionPointTypes is a list of supported injection point types
 var SupportedInjectionPointTypes = []string{
 	"QUERY",
@@ -354,6 +377,8 @@ func CreateTestCases(injectionpointtypes []string, injectiontypes []string, mong
 
 // Task represents a Fuzzer task
 type Task struct {
+	Project        string
+	Name           string
 	InjectionTypes []string
 	BaseRequest    HTTPRequest
 	Start          time.Time
@@ -362,14 +387,41 @@ type Task struct {
 	TestCases      []TestCase
 }
 
+// SerializedTask is the bson serialized version of Task
+type SerializedTask struct {
+	Project     string               `bson:"project"`
+	Name        string               `bson:"name"`
+	BaseRequest string               `bson:"baserequest"`
+	Start       time.Time            `bson:"start"`
+	End         time.Time            `bson:"end"`
+	TestCases   []SerializedTestCase `bson:"testcases"`
+}
+
+// Serialize returns a serialized version of Task
+func (T *Task) serialize() SerializedTask {
+	task := SerializedTask{
+		Project:     T.Project,
+		Name:        T.Name,
+		BaseRequest: T.BaseRequest.RequestText,
+		Start:       T.Start,
+		End:         T.End,
+	}
+	for _, tc := range T.TestCases {
+		task.TestCases = append(task.TestCases, tc.Serialize())
+	}
+	return task
+}
+
 // NewTask takes a list of InjectionTypes and HTTPRequest and returns a FuzzerTask
-func NewTask(InjectionTypes []string, InjectionPointTypes []string, BaseRequest HTTPRequest, mongodbURI string) (Task, error) {
+func NewTask(Project string, Name string, InjectionTypes []string, InjectionPointTypes []string, BaseRequest HTTPRequest, mongodbURI string) (Task, error) {
 	var task Task
 	TestCases, err := CreateTestCases(InjectionPointTypes, InjectionTypes, mongodbURI, BaseRequest)
 	if err != nil {
 		return task, err
 	}
 	task = Task{
+		Project:        Project,
+		Name:           Name,
 		InjectionTypes: InjectionTypes,
 		BaseRequest:    BaseRequest,
 		TestCases:      TestCases,
@@ -379,128 +431,78 @@ func NewTask(InjectionTypes []string, InjectionPointTypes []string, BaseRequest 
 }
 
 // Run starts and run a fuzzer Task
-func (f *Task) Run() {
-	f.Start = time.Now()
+func (T *Task) Run(TotalThreads int) {
+	if TotalThreads == 0 {
+		TotalThreads = 10
+	}
+	mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		panic(err)
+	}
+	//ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := context.Background()
+	err = mclient.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer mclient.Disconnect(ctx)
+	//defer cancel()
+	defer ctx.Done()
+	pandushiDB := mclient.Database("pandushi")
+	taskCollection := pandushiDB.Collection("tasks")
+
+	T.Start = time.Now()
+	T.Name += "_" + T.Start.Format(time.RFC3339)
+	fmt.Printf("Project Name: %s\n", T.Project)
+	fmt.Printf("Scan Name: %s\n", T.Name)
 	var mutex = &sync.Mutex{}
 	var wg sync.WaitGroup
-	for _, testcase := range f.TestCases {
-		wg.Add(1)
-		mutex.Lock()
-		go func() {
-			defer wg.Done()
-			mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
-			if err != nil {
-				panic(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err = mclient.Connect(ctx)
-			if err != nil {
-				panic(err)
-			}
-			defer mclient.Disconnect(ctx)
-			defer cancel()
+	for i := range T.TestCases {
+		for j := 0; j < TotalThreads; j++ {
+			wg.Add(1)
+			mutex.Lock()
+			go func(i int) {
+				defer wg.Done()
+				testcase := &(T.TestCases[i])
+				httpclient := http.Client{
+					Timeout: time.Duration(120 * time.Second),
+				}
+				//reqstr := testcase.Request.RequestText
 
-			pandushiDB := mclient.Database("pandushi")
-			taskCollection := pandushiDB.Collection("tasks")
+				//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
 
-			httpclient := http.Client{
-				Timeout: time.Duration(5 * time.Second),
-			}
-			reqstr := testcase.Request.RequestText
-
-			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-
-			resp, err := httpclient.Do(testcase.Request.Request)
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				httpres, err := NewHTTPResponse(resp)
+				resp, err := httpclient.Do(testcase.Request.Request)
 				if err != nil {
 					fmt.Println(err)
 				} else {
-					//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-					//fmt.Println(httpres.ResponseText)
-					testcase.Response = httpres
-					taskResult, err := taskCollection.InsertOne(ctx, bson.D{
-						{Key: "Request", Value: reqstr},
-						{Key: "Response", Value: testcase.Response.ResponseText},
-					})
+					httpres, err := NewHTTPResponse(resp)
 					if err != nil {
-						log.Println(err)
+						fmt.Println(err)
 					} else {
-						log.Println(taskResult.InsertedID)
+						//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
+						//fmt.Println(httpres.ResponseText)
+						//fmt.Printf("Response #%d:\n%s\n", i, httpres.ResponseText)
+						// if len(httpres.ResponseText) == 0 {
+						// 	fmt.Println(httpres.Response.Status)
+						// }
+						testcase.Response = httpres
 					}
 				}
-			}
-		}()
-		mutex.Unlock()
+				testcase.Status = "Done"
+			}(i)
+			mutex.Unlock()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
-	f.End = time.Now()
+	T.End = time.Now()
+	serializedTask := T.serialize()
+	taskResult, err := taskCollection.InsertOne(ctx, serializedTask)
+	if err != nil {
+		log.Println(err)
+	} else {
+		log.Println(taskResult.InsertedID)
+	}
 }
-
-// // Run starts and run a fuzzer Task
-// func (f *Task) Run() {
-// 	f.Start = time.Now()
-// 	var mutex = &sync.Mutex{}
-// 	var wg sync.WaitGroup
-// 	for i := 0; i < 10; i++ {
-// 		wg.Add(1)
-// 		mutex.Lock()
-// 		go func() {
-// 			defer wg.Done()
-// 			mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
-// 			if err != nil {
-// 				panic(err)
-// 			}
-// 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-// 			err = mclient.Connect(ctx)
-// 			if err != nil {
-// 				panic(err)
-// 			}
-// 			defer mclient.Disconnect(ctx)
-// 			defer cancel()
-
-// 			pandushiDB := mclient.Database("pandushi")
-// 			taskCollection := pandushiDB.Collection("tasks")
-
-// 			httpclient := http.Client{
-// 				Timeout: time.Duration(5 * time.Second),
-// 			}
-// 			reqstr, err := RequestToString(f.BaseRequest.Request)
-// 			if err != nil {
-// 				fmt.Println(err)
-// 			}
-
-// 			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-
-// 			resp, err := httpclient.Do(f.BaseRequest.Request)
-// 			if err != nil {
-// 				fmt.Println(err)
-// 			} else {
-// 				httpres, err := NewHTTPResponse(resp)
-// 				if err != nil {
-// 					fmt.Println(err)
-// 				} else {
-// 					//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-// 					//fmt.Println(httpres.ResponseText)
-// 					taskResult, err := taskCollection.InsertOne(ctx, bson.D{
-// 						{Key: "Request", Value: reqstr},
-// 						{Key: "Response", Value: httpres.ResponseText},
-// 					})
-// 					if err != nil {
-// 						log.Println(err)
-// 					} else {
-// 						log.Println(taskResult.InsertedID)
-// 					}
-// 				}
-// 			}
-// 		}()
-// 		mutex.Unlock()
-// 	}
-// 	wg.Wait()
-// 	f.End = time.Now()
-// }
 
 // InjectQueryParameters take an array of payloads and return an array of TestCases with the payloads injected into query parameters
 func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []TestCase {
@@ -658,7 +660,7 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 		return InjectedTestCases
 	}
 	m := JSONInterface.(map[string]interface{})
-	MarkedJSONInterface := MarkJSON(m, &count, &marks, `§`)
+	MarkedJSONInterface := markjson(m, &count, &marks, `§`)
 	jsonBytes, err := json.Marshal(MarkedJSONInterface)
 	if err != nil {
 		fmt.Println(err)
@@ -705,7 +707,7 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 	return InjectedTestCases
 }
 
-func MarkJSON(data interface{}, count *int, marks *[]string, marker string) interface{} {
+func markjson(data interface{}, count *int, marks *[]string, marker string) interface{} {
 
 	if reflect.ValueOf(data).Kind() == reflect.Slice {
 		d := reflect.ValueOf(data)
@@ -717,7 +719,7 @@ func MarkJSON(data interface{}, count *int, marks *[]string, marker string) inte
 		for i, v := range tmpData {
 			typeOfValue := reflect.TypeOf(v).Kind()
 			if typeOfValue == reflect.Map || typeOfValue == reflect.Slice {
-				returnSlice[i] = MarkJSON(v, count, marks, marker)
+				returnSlice[i] = markjson(v, count, marks, marker)
 			} else {
 				returnSlice[i] = marker + strconv.Itoa(*count) + reflect.ValueOf(v).String() + marker
 				*marks = append(*marks, strconv.Itoa(*count))
@@ -731,7 +733,7 @@ func MarkJSON(data interface{}, count *int, marks *[]string, marker string) inte
 		for _, k := range d.MapKeys() {
 			typeOfValue := reflect.TypeOf(d.MapIndex(k).Interface()).Kind()
 			if typeOfValue == reflect.Map || typeOfValue == reflect.Slice {
-				tmpData[k.String()] = MarkJSON(d.MapIndex(k).Interface(), count, marks, marker)
+				tmpData[k.String()] = markjson(d.MapIndex(k).Interface(), count, marks, marker)
 			} else {
 				tmpData[k.String()] = marker + strconv.Itoa(*count) + reflect.ValueOf(d.MapIndex(k).Interface()).String() + marker
 				*marks = append(*marks, strconv.Itoa(*count))
