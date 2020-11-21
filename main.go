@@ -25,6 +25,13 @@ func main() {
 	requestFname := parser.String("r", "request-file", &argparse.Options{Required: false, Help: "Load HTTP request from file"})
 	payloadFname := parser.String("p", "payload-file", &argparse.Options{Required: false, Help: "Load payload file"})
 	payloadType := parser.String("t", "payload-type", &argparse.Options{Required: false, Help: "Payload type"})
+	projectName := parser.String("P", "project", &argparse.Options{Required: false, Help: "Project name", Default: "default"})
+	scanName := parser.String("S", "scan-name", &argparse.Options{Required: false, Help: "Scan name", Default: "default"})
+	threadCount := parser.Int("T", "thread-count", &argparse.Options{
+		Required: false,
+		Help:     "Total number of threads to use for sending requests",
+		Default:  10,
+	})
 
 	fmt.Println("gscanner")
 	err := parser.Parse(os.Args)
@@ -34,6 +41,7 @@ func main() {
 
 	if len(*requestFname) > 0 {
 		fmt.Printf("Request Fname: %s\n", *requestFname)
+		fmt.Printf("Thread Count: %d\n", *threadCount)
 
 		fd, err := os.Open(*requestFname)
 		if err != nil {
@@ -53,92 +61,12 @@ func main() {
 			panic(err)
 		}
 		request.Request.RequestURI = ""
-		//fmt.Printf("HTTPRequest.RequestText: %s\n", request.RequestText)
-		//fmt.Printf("HTTPRequest.Request: %s\n", request.Request.Method)
-		//fmt.Printf("RequestURI: %s\n", request.Request.RequestURI)
-		//fmt.Printf("Proto: %s\n", request.Request.Proto)
-		//fmt.Printf("URL: %s\n", request.Request.URL)
-
-		/*
-			reqstr, err := fuzzer.RequestToString(request.Request)
-			if err != nil {
-				panic(err)
-			}
-
-			fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-
-			client := http.Client{
-				Timeout: time.Duration(5 * time.Second),
-			}
-			resp, err := client.Do(request.Request)
-			if err != nil {
-				panic(err)
-			}
-
-			httpres, err := fuzzer.NewHTTPResponse(resp)
-			if err != nil {
-				panic(err)
-			}
-
-			fmt.Println(httpres.ResponseText)
-		*/
 		log.Println(request.IsMarked())
-		fuzzerTask, err := fuzzer.NewTask([]string{"XSS"}, fuzzer.SupportedInjectionPointTypes, request, "mongodb://localhost:27017")
+		fuzzerTask, err := fuzzer.NewTask(*projectName, *scanName, []string{"XSS"}, fuzzer.SupportedInjectionPointTypes, request, "mongodb://localhost:27017")
 		if err != nil {
 			panic(err)
 		}
-		fuzzerTask.Run()
-
-		// payloadArr := []payloads.Payload{
-		// 	{
-		// 		Value:     "<script>alert(1)</script>",
-		// 		InputType: "xss",
-		// 	},
-		// }
-
-		// payloadArr, err := payloads.CreatePayloadsFromInputTypes([]string{"XSS"}, "mongodb://localhost:27017")
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		// InjectedTestCases := request.InjectHeaders(payloadArr)
-		// QueryCases := request.InjectQueryParameters(payloadArr)
-		// InjectedTestCases = append(InjectedTestCases, QueryCases...)
-		// URLEncodeBodyCases := request.InjectFormURLEncodedBody(payloadArr)
-		// InjectedTestCases = append(InjectedTestCases, URLEncodeBodyCases...)
-		// JSONTestCases := request.InjectJSONParameters(payloadArr)
-		// InjectedTestCases = append(InjectedTestCases, JSONTestCases...)
-
-		// InjectedTestCases, err := fuzzer.CreateTestCases(fuzzer.SupportedInjectionPointTypes, []string{"XSS"}, "mongodb://localhost:27017", request)
-		// if err != nil {
-		// 	panic(err)
-		// }
-
-		// for _, InjectedTestCase := range InjectedTestCases {
-		// 	// fmt.Printf("Request rawquery: %s\n", InjectedRequest.Request.URL.RawQuery)
-		// 	// fmt.Printf("Request addr: %p\n", InjectedRequest.Request)
-		// 	fmt.Printf("Request text: %s\n", InjectedTestCase.Request.RequestText)
-
-		// 	client := http.Client{
-		// 		Timeout: time.Duration(5 * time.Second),
-		// 	}
-		// 	resp, err := client.Do(InjectedTestCase.Request.Request)
-		// 	if err != nil {
-		// 		fmt.Printf("Error: %s\n", err)
-		// 		continue
-		// 	}
-
-		// 	httpres, err := fuzzer.NewHTTPResponse(resp)
-		// 	if err != nil {
-		// 		fmt.Printf("Error: %s\n", err)
-		// 		continue
-		// 	}
-
-		// 	fmt.Printf("response:\n%s\n", httpres.ResponseText)
-
-		// }
-		// fmt.Printf("JSON cases: %d\n", len(JSONTestCases))
-
+		fuzzerTask.Run(*threadCount)
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)
 		fmt.Printf("Payload Type: %s\n", *payloadType)
