@@ -37,12 +37,18 @@ func main() {
 		Help:     "List of allowed http error codes",
 		Default:  fuzzer.SuccessCodes,
 	})
+	storageURIs := parser.StringList("C", "storage-config", &argparse.Options{
+		Required: true,
+		Help:     "List of storage URIs. Supported URIs prefixes are file:// for file storage, and mongodb:// for mongdb.",
+	})
 
 	fmt.Println("gscanner")
 	err := parser.Parse(os.Args)
 	if err != nil {
 		fmt.Print(parser.Usage(err))
 	}
+
+	storageconfig := fuzzer.CreateStorageConfigFromURI(*storageURIs)
 
 	if len(*requestFname) > 0 {
 		fmt.Printf("Request Fname: %s\n", *requestFname)
@@ -80,7 +86,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fuzzerTask.Run(*threadCount)
+		fuzzerTask.Run(*threadCount, storageconfig)
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)
 		fmt.Printf("Payload Type: %s\n", *payloadType)

@@ -506,7 +506,7 @@ func NewTask(Project string, Name string, InjectionTypes []string, InjectionPoin
 }
 
 // Run starts and run a fuzzer Task
-func (T *Task) Run(TotalThreads int) {
+func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 	if TotalThreads == 0 {
 		TotalThreads = 10
 	}
@@ -557,14 +557,18 @@ func (T *Task) Run(TotalThreads int) {
 	T.End = time.Now()
 	serializedTask := T.serialize()
 
-	err := ResultsToMongoDB("mongodb://localhost:27017", serializedTask)
-	if err != nil {
-		log.Printf("Run error: %s\n", err)
+	if storageconfig.UseMongoDB {
+		err := ResultsToMongoDB(storageconfig.MongoDBURI, serializedTask)
+		if err != nil {
+			log.Printf("Run error: %s\n", err)
+		}
 	}
 
-	err = ResultsToFile(T.Name, serializedTask)
-	if err != nil {
-		log.Printf("Run error: %s\n", err)
+	if storageconfig.UseFile {
+		err := ResultsToFile(storageconfig.FileURI, serializedTask)
+		if err != nil {
+			log.Printf("Run error: %s\n", err)
+		}
 	}
 }
 
@@ -864,7 +868,7 @@ func ResultsToFile(projectName string, task SerializedTask) error {
 
 // ResultsToMongoDB will write the results of a fuzzing Task to MongoDB
 func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
-	mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+	mclient, err := mongo.NewClient(options.Client().ApplyURI(mongodbURI))
 	if err != nil {
 		log.Printf("ResultsToMongoDB error: %s\n", err)
 		return err
@@ -889,4 +893,42 @@ func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
 
 	log.Println(taskResult.InsertedID)
 	return nil
+}
+
+// StorageConfig contains information about where to store results of a fuzzer Task
+type StorageConfig struct {
+	UseMongoDB       bool
+	MongoDBURI       string
+	UseFile          bool
+	FileURI          string
+	UseElasticSearch bool
+	ElasticSeachURI  string
+}
+
+// CreateStorageConfigFromURI takes an array of URI strings and return a StorageConfig type
+func CreateStorageConfigFromURI(StorageURIs []string) StorageConfig {
+	config := StorageConfig{
+		UseMongoDB:       false,
+		UseElasticSearch: false,
+		UseFile:          false,
+	}
+	for _, URI := range StorageURIs {
+		if strings.HasPrefix(URI, "file://") {
+			config.FileURI = strings.Replace(URI, "file://", "", 1)
+			config.UseFile = true
+		}
+
+		if strings.HasPrefix(URI, "mongodb://") {
+			config.MongoDBURI = URI
+			config.UseMongoDB = true
+		}
+
+		if strings.HasPrefix(URI, "elastic://") {
+			config.ElasticSeachURI = strings.Replace(URI, "elastic://", "http://", 1)
+			config.UseElasticSearch = true
+		}
+
+	}
+
+	return config
 }

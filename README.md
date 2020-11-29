@@ -9,7 +9,10 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 
 ## Wish list
 
-- [ ] Add option to scan data to a file or to elasticsearch based on the URI passed to the task.Run method. file:// for file saving to a file and elastic:// for saving to elasticsearch.
+- [x] Add option to scan data to a file by passing file:// URI on the command line.
+- [x] Add option to scan data to mongodb by passing mongodb:// URI on the command line.
+- [ ] Add option to scan data to elasticsearch by passing elastic:// URI on the command line.
+- [ ] Add option to scan data to an REST API by passing http:// URI on the command line.
 - [ ] Build front-end to analyze the scan data
 
 ## TODO
