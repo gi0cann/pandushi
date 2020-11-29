@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -509,21 +510,6 @@ func (T *Task) Run(TotalThreads int) {
 	if TotalThreads == 0 {
 		TotalThreads = 10
 	}
-	mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
-	if err != nil {
-		panic(err)
-	}
-	//ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	ctx := context.Background()
-	err = mclient.Connect(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer mclient.Disconnect(ctx)
-	//defer cancel()
-	defer ctx.Done()
-	pandushiDB := mclient.Database("pandushi")
-	taskCollection := pandushiDB.Collection("tasks")
 
 	T.Start = time.Now()
 	T.Name += "_" + T.Start.Format(time.RFC3339)
@@ -570,11 +556,15 @@ func (T *Task) Run(TotalThreads int) {
 	}
 	T.End = time.Now()
 	serializedTask := T.serialize()
-	taskResult, err := taskCollection.InsertOne(ctx, serializedTask)
+
+	err := ResultsToMongoDB("mongodb://localhost:27017", serializedTask)
 	if err != nil {
-		log.Println(err)
-	} else {
-		log.Println(taskResult.InsertedID)
+		log.Printf("Run error: %s\n", err)
+	}
+
+	err = ResultsToFile(T.Name, serializedTask)
+	if err != nil {
+		log.Printf("Run error: %s\n", err)
 	}
 }
 
@@ -843,4 +833,60 @@ func CheckTarget(req *HTTPRequest, successcodes []int) error {
 	}
 
 	return errors.New(strconv.Itoa(resp.StatusCode))
+}
+
+// ResultsToFile will write the results of a fuzzing Task to a file
+func ResultsToFile(projectName string, task SerializedTask) error {
+	fd, err := os.OpenFile(projectName+".json", os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		log.Printf("ResultsToFile error: %s\n", err)
+		return err
+	}
+
+	results, err := json.Marshal(task)
+	if err != nil {
+		log.Printf("ResultsToFile error: %s\n", err)
+		return err
+	}
+
+	_, err = fd.Write(results)
+	if err != nil {
+		log.Printf("ResultsToFile error: %s\n", err)
+		return err
+	}
+
+	if err := fd.Close(); err != nil {
+		log.Printf("ResultsToFile error: %s\n", err)
+		return err
+	}
+	return nil
+}
+
+// ResultsToMongoDB will write the results of a fuzzing Task to MongoDB
+func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
+	mclient, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		log.Printf("ResultsToMongoDB error: %s\n", err)
+		return err
+	}
+	//ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := context.Background()
+	err = mclient.Connect(ctx)
+	if err != nil {
+		log.Printf("ResultsToMongoDB error: %s\n", err)
+		return err
+	}
+	defer mclient.Disconnect(ctx)
+	//defer cancel()
+	defer ctx.Done()
+	pandushiDB := mclient.Database("pandushi")
+	taskCollection := pandushiDB.Collection("tasks")
+	taskResult, err := taskCollection.InsertOne(ctx, task)
+	if err != nil {
+		log.Printf("ResultsToMongoDB error: %s\n", err)
+		return err
+	}
+
+	log.Println(taskResult.InsertedID)
+	return nil
 }

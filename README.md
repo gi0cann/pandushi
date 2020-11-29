@@ -9,7 +9,8 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 
 ## Wish list
 
-*
+- [ ] Add option to scan data to a file or to elasticsearch based on the URI passed to the task.Run method. file:// for file saving to a file and elastic:// for saving to elasticsearch.
+- [ ] Build front-end to analyze the scan data
 
 ## TODO
 
@@ -26,6 +27,8 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 - [ ] inject request uri path
 - [x] store finished task with testcase in mongodb
 - [x] add check to make sure target is live before initiating scan
+- [x] write payload importer
+- [ ] deduplicate payloads
 
 ## Design notes
 
