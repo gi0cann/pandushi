@@ -9,6 +9,52 @@ import (
 	"github.com/gi0cann/pandushi/payloads"
 )
 
+func TestInjectPath(t *testing.T) {
+	tests := []struct {
+		inputRequest  string
+		injection     []payloads.Payload
+		expectedPaths []string
+	}{
+		{
+			`GET /hello/test.php?foo=bar&hello=world HTTP/1.1
+Host: pbanner.gi0cann.io
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+			[]payloads.Payload{
+				{
+					Value:     "<script>alert(1)</script>",
+					InputType: "XSS",
+				},
+			},
+			[]string{
+				"/<script>alert(1)</script>/test.php",
+				"/hello/<script>alert(1)</script>",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		t.Logf("Path: %s", req.Request.URL.Path)
+		if err != nil {
+			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes: %s", err)
+		}
+		TestCases := req.InjectPath(tt.injection)
+		for pi := range TestCases {
+			injectedPath := TestCases[pi].Request.Request.URL.Path
+			if injectedPath != tt.expectedPaths[pi] {
+				t.Errorf("ExpectedPaths did not match injectedPath. Expected: %s. got: %s\n", tt.expectedPaths[pi], injectedPath)
+			}
+		}
+	}
+}
+
 func TestInjectJSONParameters(t *testing.T) {
 	tests := []struct {
 		inputRequest           string

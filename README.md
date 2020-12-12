@@ -27,7 +27,7 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 - [ ] Inject request body multipart/form-data parameters
 - [x] Inject request body application/json parameters
 - [x] inject request query parameters
-- [ ] inject request uri path
+- [x] inject request uri path
 - [x] store finished task with testcase in mongodb
 - [x] add check to make sure target is live before initiating scan
 - [x] write payload importer

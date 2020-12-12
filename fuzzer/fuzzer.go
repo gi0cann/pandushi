@@ -164,21 +164,15 @@ func CountJSONBody(jsoni interface{}) int8 {
 	count := int8(0)
 	m := jsoni.(map[string]interface{})
 	for k, v := range m {
-		//fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
 		switch vv := v.(type) {
 		case string:
-			//fmt.Printf("String: %s:%s\n", k, v)
 			count++
 		case int:
-			//fmt.Printf("Int: %s:%d\n", k, v)
 			count++
 		case float64:
-			//fmt.Printf("Float: %s:%f\n", k, v)
 			count++
 		case []interface{}:
 			for _, vi := range vv {
-				//fmt.Printf("default: %s:%v:%T\n", k, vi, v)
-				//fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
 				switch vi.(type) {
 				case map[string]interface{}:
 					count += CountJSONBody(vi)
@@ -188,7 +182,6 @@ func CountJSONBody(jsoni interface{}) int8 {
 
 			}
 		case bool:
-			//fmt.Printf("Bool: %s:%T\n", k, v)
 			count++
 		case map[string]interface{}:
 			count += CountJSONBody(v)
@@ -196,9 +189,6 @@ func CountJSONBody(jsoni interface{}) int8 {
 			fmt.Printf("default: key:%s, value:%v, type:%T\n", k, v, v)
 		}
 	}
-
-	//fmt.Println(body)
-	//fmt.Println(len(body))
 	return count
 }
 
@@ -294,9 +284,6 @@ func RequestToString(r *http.Request) (string, error) {
 		return RequestStr.String(), err
 	}
 	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-	// if r.ContentLength != -1 {
-	// 	r.Header.Set("Content-Lenght", strconv.FormatInt(int64(len(body)), 10))
-	// }
 	for key, header := range r.Header {
 		RequestStr.WriteString(key + ": " + strings.Join(header, " ") + "\r\n")
 	}
@@ -308,13 +295,6 @@ func RequestToString(r *http.Request) (string, error) {
 func (req *HTTPRequest) IsMarked() bool {
 	Marker := regexp.MustCompile(MarkerRegex)
 	return Marker.MatchString(req.RequestText)
-	/*
-		MarkerPositions := Marker.FindAllIndex([]byte(req.RequestText), 0)
-		log.Println(len(MarkerPositions))
-		for _, pos := range MarkerPositions {
-			log.Println(pos)
-		}
-	*/
 }
 
 // HTTPResponse represents a fuzzer HTTP response
@@ -418,6 +398,7 @@ var SupportedInjectionPointTypes = []string{
 	"JSON",
 	"FORM_URLENCODE",
 	"HEADER",
+	"PATH",
 }
 
 // CreateTestCases takes a arrays of InjectionPointType, InjectionType, and a mongodbURI and returns an array of TestCases
@@ -444,6 +425,10 @@ func CreateTestCases(injectionpointtypes []string, injectiontypes []string, mong
 
 		if injectionpointtype == "HEADER" {
 			testcases = append(testcases, request.InjectHeaders(payloadArr)...)
+		}
+
+		if injectionpointtype == "PATH" {
+			testcases = append(testcases, request.InjectPath(payloadArr)...)
 		}
 	}
 
@@ -527,24 +512,16 @@ func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 				httpclient := http.Client{
 					Timeout: time.Duration(120 * time.Second),
 				}
-				//reqstr := testcase.Request.RequestText
 
-				//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-
+				testcase.Request.Request.Close = true
 				resp, err := httpclient.Do(testcase.Request.Request)
 				if err != nil {
-					fmt.Println(err)
+					fmt.Printf("Task.Run httpclient error: %s\n", err)
 				} else {
 					httpres, err := NewHTTPResponse(resp)
 					if err != nil {
-						fmt.Println(err)
+						fmt.Printf("Task.Run NewHTTPResponse error: %s\n", err)
 					} else {
-						//fmt.Printf("REQSTR:\n\n%s\n", reqstr)
-						//fmt.Println(httpres.ResponseText)
-						//fmt.Printf("Response #%d:\n%s\n", i, httpres.ResponseText)
-						// if len(httpres.ResponseText) == 0 {
-						// 	fmt.Println(httpres.Response.Status)
-						// }
 						testcase.Response = httpres
 					}
 				}
@@ -560,14 +537,14 @@ func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 	if storageconfig.UseMongoDB {
 		err := ResultsToMongoDB(storageconfig.MongoDBURI, serializedTask)
 		if err != nil {
-			log.Printf("Run error: %s\n", err)
+			log.Printf("Run ResultsToMongoDB error: %s\n", err)
 		}
 	}
 
 	if storageconfig.UseFile {
 		err := ResultsToFile(storageconfig.FileURI, serializedTask)
 		if err != nil {
-			log.Printf("Run error: %s\n", err)
+			log.Printf("Run ResultsToFile error: %s\n", err)
 		}
 	}
 }
@@ -593,12 +570,6 @@ func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []T
 				if err == nil {
 					NewHTTPRequest.RequestText = NewRequestText
 				}
-				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
-				//fmt.Printf("Request rawquery addr: %p\n", &NewHTTPRequest.Request.URL.RawQuery)
-				//fmt.Printf("Request addr: %p\n", NewHTTPRequest.Request)
-				//fmt.Printf("Original raw query: %s\n", req.Request.URL.RawQuery)
-				//fmt.Printf("Request rawquery: %s\n", NewHTTPRequest.Request.URL.RawQuery)
-				//fmt.Printf("Request text: %s\n", NewHTTPRequest.RequestText)
 				InjectedTestCases = append(InjectedTestCases, TestCase{
 					BaseRequest:        *req,
 					Request:            NewHTTPRequest,
@@ -709,6 +680,41 @@ func (req *HTTPRequest) InjectFormURLEncodedBody(injections []payloads.Payload) 
 		}
 	}
 
+	return InjectedTestCases
+}
+
+// InjectPath takes an array of payloads and returns an array of TestCases with the payloads injected in the URI path
+func (req *HTTPRequest) InjectPath(injections []payloads.Payload) []TestCase {
+	var InjectedTestCases []TestCase
+	for _, injection := range injections {
+		pathList := strings.Split(req.Request.URL.Path, "/")
+		pathList = pathList[1:]
+		for i := range pathList {
+			current := strings.Split(req.Request.URL.Path, "/")
+			current = current[1:]
+			current[i] = injection.Value
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			if err != nil {
+				fmt.Printf("Error Creating HTTPRequest: %s\n", err)
+			} else {
+				NewHTTPRequest.Request.URL.Path = "/" + strings.Join(current, "/")
+				NewHTTPRequest.Request.URL.RawPath = "/" + strings.Join(current, "/")
+				NewRequestText, err := RequestToString(NewHTTPRequest.Request)
+				if err == nil {
+					NewHTTPRequest.RequestText = NewRequestText
+				}
+				InjectedTestCases = append(InjectedTestCases, TestCase{
+					BaseRequest:        *req,
+					Request:            NewHTTPRequest,
+					Injection:          injection.Value,
+					InjectionType:      injection.InputType,
+					InjectionPoint:     pathList[i],
+					InjectionPointType: "path",
+					Status:             "queued",
+				})
+			}
+		}
+	}
 	return InjectedTestCases
 }
 
@@ -846,6 +852,7 @@ func ResultsToFile(projectName string, task SerializedTask) error {
 		log.Printf("ResultsToFile error: %s\n", err)
 		return err
 	}
+	defer fd.Close()
 
 	results, err := json.Marshal(task)
 	if err != nil {
@@ -873,7 +880,6 @@ func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
 		log.Printf("ResultsToMongoDB error: %s\n", err)
 		return err
 	}
-	//ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	ctx := context.Background()
 	err = mclient.Connect(ctx)
 	if err != nil {
@@ -881,7 +887,6 @@ func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
 		return err
 	}
 	defer mclient.Disconnect(ctx)
-	//defer cancel()
 	defer ctx.Done()
 	pandushiDB := mclient.Database("pandushi")
 	taskCollection := pandushiDB.Collection("tasks")
@@ -917,18 +922,14 @@ func CreateStorageConfigFromURI(StorageURIs []string) StorageConfig {
 			config.FileURI = strings.Replace(URI, "file://", "", 1)
 			config.UseFile = true
 		}
-
 		if strings.HasPrefix(URI, "mongodb://") {
 			config.MongoDBURI = URI
 			config.UseMongoDB = true
 		}
-
 		if strings.HasPrefix(URI, "elastic://") {
 			config.ElasticSeachURI = strings.Replace(URI, "elastic://", "http://", 1)
 			config.UseElasticSearch = true
 		}
-
 	}
-
 	return config
 }
