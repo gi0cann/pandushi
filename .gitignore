@@ -1,3 +1,5 @@
-*.req
 gscanner
 *.exe
+pandushi
+tags
+pbanner*
