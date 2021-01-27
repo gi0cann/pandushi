@@ -29,7 +29,7 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 - [ ] Inject request body application/xml parameters
 - [x] Inject request query parameters
 - [x] Inject request uri path
-- [ ] Inject marked (§§) requests
+- [x] Inject marked (§§) requests
 - [x] Store finished task with testcase in mongodb
 - [x] Add check to make sure target is live before initiating scan
 - [x] Write payload importer

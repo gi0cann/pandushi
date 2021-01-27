@@ -9,6 +9,159 @@ import (
 	"github.com/gi0cann/pandushi/payloads"
 )
 
+func TestInjectMarked(t *testing.T) {
+	tests := []struct {
+		inputRequest     string
+		injections       []payloads.Payload
+		expectedRequests []string
+	}{
+		{
+			`GET /test.php?foo=§§&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+			[]payloads.Payload{
+				{
+					Value:     "<script>alert(1)</script>",
+					InputType: "XSS",
+				},
+				{
+					Value:     "' or 1=1--",
+					InputType: "SQLi",
+				},
+			},
+			[]string{
+				`GET /test.php?foo=<script>alert(1)</script>&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+				`GET /test.php?foo=%27+or+1%3D1--&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+`,
+			},
+		},
+		{
+			`POST /test.php?foo=§§&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 19
+
+foo=bar&hello=§§
+`,
+			[]payloads.Payload{
+				{
+					Value:     "<script>alert(1)</script>",
+					InputType: "XSS",
+				},
+				{
+					Value:     "' or 1=1--",
+					InputType: "SQLi",
+				},
+			},
+			[]string{
+				`POST /test.php?foo=<script>alert(1)</script>&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 19
+
+foo=bar&hello=
+`,
+				`POST /test.php?foo=&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 19
+
+foo=bar&hello=<script>alert(1)</script>
+`,
+				`POST /test.php?foo=%27+or+1%3D1--&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 19
+
+foo=bar&hello=
+`,
+				`POST /test.php?foo=&hello=world HTTP/1.1
+Host: localhost:8009
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 19
+
+foo=bar&hello=' or 1=1--
+`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		if err != nil {
+			t.Fatalf("Error create HTTPRequest from Bytes: %s\n", err)
+		}
+
+		InjectedTestCases := request.InjectMarked(tt.injections)
+		//t.Log(InjectedRequests)
+
+		if len(tt.expectedRequests) != len(InjectedTestCases) {
+			t.Fatalf("Expected HTTPRequest.InjectMarked to return %d requests got %d\n", len(tt.expectedRequests), len(InjectedTestCases))
+		}
+
+		for i, req := range tt.expectedRequests {
+			currentRequestText := InjectedTestCases[i].Request.RequestText
+			if currentRequestText != req {
+				t.Errorf("Injected request doesn't match expected request.\nexpected:\n%s\ngot:\n%s\n", req, currentRequestText)
+			}
+		}
+	}
+}
+
 func TestInjectPath(t *testing.T) {
 	tests := []struct {
 		inputRequest  string

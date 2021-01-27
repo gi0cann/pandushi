@@ -81,12 +81,21 @@ func main() {
 			os.Exit(1)
 		}
 		request.Request.RequestURI = ""
-		log.Println(request.IsMarked())
-		fuzzerTask, err := fuzzer.NewTask(*projectName, *scanName, []string{"XSS"}, fuzzer.SupportedInjectionPointTypes, request, "mongodb://localhost:27017")
-		if err != nil {
-			panic(err)
+		if request.IsMarked() {
+			fmt.Println("Marked")
+			fuzzerTask, err := fuzzer.NewTask(*projectName, *scanName, []string{"XSS"}, []string{"MARKED"}, request, "mongodb://localhost:27017")
+			if err != nil {
+				panic(err)
+			}
+			fuzzerTask.Run(*threadCount, storageconfig)
+		} else {
+			fmt.Println("Not Marked")
+			fuzzerTask, err := fuzzer.NewTask(*projectName, *scanName, []string{"XSS"}, fuzzer.SupportedInjectionPointTypes, request, "mongodb://localhost:27017")
+			if err != nil {
+				panic(err)
+			}
+			fuzzerTask.Run(*threadCount, storageconfig)
 		}
-		fuzzerTask.Run(*threadCount, storageconfig)
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)
 		fmt.Printf("Payload Type: %s\n", *payloadType)

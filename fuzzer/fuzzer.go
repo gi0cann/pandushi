@@ -399,6 +399,7 @@ var SupportedInjectionPointTypes = []string{
 	"FORM_URLENCODE",
 	"HEADER",
 	"PATH",
+	"MARKED",
 }
 
 // CreateTestCases takes a arrays of InjectionPointType, InjectionType, and a mongodbURI and returns an array of TestCases
@@ -429,6 +430,10 @@ func CreateTestCases(injectionpointtypes []string, injectiontypes []string, mong
 
 		if injectionpointtype == "PATH" {
 			testcases = append(testcases, request.InjectPath(payloadArr)...)
+		}
+
+		if injectionpointtype == "MARKED" {
+			testcases = append(testcases, request.InjectMarked(payloadArr)...)
 		}
 	}
 
@@ -781,6 +786,58 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 	return InjectedTestCases
 }
 
+// InjectMarked takes a array of payloads and returns a array of TestCases with the payloads injected in the JSON body of each HTTP request
+func (req *HTTPRequest) InjectMarked(injections []payloads.Payload) []TestCase {
+	var InjectedTestCases []TestCase
+
+	if req.IsMarked() {
+		pattern := regexp.MustCompile(`§.*?§`)
+		indexes := pattern.FindAllStringIndex(req.RequestText, -1)
+		current := 0
+		reqArr := make([]string, len(indexes)+1)
+		for i, index := range indexes {
+			reqArr[i] = string(req.RequestText[current:index[1]])
+			current = index[1]
+		}
+		reqArr[len(reqArr)-1] = string(req.RequestText[current:])
+		for _, injection := range injections {
+			for i := range indexes {
+				newReqArr := make([]string, len(reqArr))
+				copy(newReqArr, reqArr)
+				newReqArr[i] = pattern.ReplaceAllString(newReqArr[i], injection.Value)
+				newReqString := strings.Join(newReqArr, "")
+				newReqString = pattern.ReplaceAllString(newReqString, "")
+				NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(newReqString))
+
+				if err != nil {
+					newReqArr = make([]string, len(reqArr))
+					copy(newReqArr, reqArr)
+					newReqArr[i] = pattern.ReplaceAllString(newReqArr[i], url.QueryEscape(injection.Value))
+					newReqString = strings.Join(newReqArr, "")
+					newReqString = pattern.ReplaceAllString(newReqString, "")
+					NewHTTPRequest, err = NewHTTPRequestFromBytes([]byte(newReqString))
+				}
+				if err != nil {
+					fmt.Printf("Error Creating HTTPRequest: %s", err)
+				} else {
+					InjectedTestCases = append(InjectedTestCases, TestCase{
+						BaseRequest:        *req,
+						Request:            NewHTTPRequest,
+						Injection:          injection.Value,
+						InjectionType:      injection.InputType,
+						InjectionPoint:     strconv.Itoa(indexes[i][0]) + " - " + strconv.Itoa(indexes[i][1]),
+						InjectionPointType: "marked",
+						Status:             "queued",
+					})
+				}
+			}
+
+		}
+	}
+
+	return InjectedTestCases
+}
+
 func markjson(data interface{}, count *int, marks *[]string, marker string) interface{} {
 
 	if reflect.ValueOf(data).Kind() == reflect.Slice {
@@ -822,12 +879,25 @@ func markjson(data interface{}, count *int, marks *[]string, marker string) inte
 
 // CheckTarget takes a request object and a list of errorcodes returns false if response to the request matches the error code and true if it doesn't
 func CheckTarget(req *HTTPRequest, successcodes []int) error {
+	var checkReq HTTPRequest
+	var err error
+	if req.IsMarked() {
+		pattern := regexp.MustCompile(`§.*?§`)
+		newReqStr := pattern.ReplaceAllString(req.RequestText, "")
+		checkReq, err = NewHTTPRequestFromBytes([]byte(newReqStr))
+		if err != nil {
+			return err
+		}
+	} else {
+		checkReq = *req
+	}
+
 	allowed := false
 	httpclient := http.Client{
 		Timeout: time.Duration(120 * time.Second),
 	}
 
-	resp, err := httpclient.Do(req.Request)
+	resp, err := httpclient.Do(checkReq.Request)
 	if err != nil {
 		fmt.Println(err)
 		return err
