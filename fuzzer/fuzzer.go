@@ -986,13 +986,15 @@ func ResultsToFile(projectName string, task SerializedTask) error {
 func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
 	mclient, err := mongo.NewClient(options.Client().ApplyURI(mongodbURI))
 	if err != nil {
-		log.Printf("ResultsToMongoDB error: %s\n", err)
 		return err
 	}
 	ctx := context.Background()
 	err = mclient.Connect(ctx)
 	if err != nil {
-		log.Printf("ResultsToMongoDB error: %s\n", err)
+		return err
+	}
+	err = mclient.Ping(ctx, nil)
+	if err != nil {
 		return err
 	}
 	defer mclient.Disconnect(ctx)
@@ -1001,7 +1003,6 @@ func ResultsToMongoDB(mongodbURI string, task SerializedTask) error {
 	taskCollection := pandushiDB.Collection("tasks")
 	taskResult, err := taskCollection.InsertOne(ctx, task)
 	if err != nil {
-		log.Printf("ResultsToMongoDB error: %s\n", err)
 		return err
 	}
 

@@ -2,6 +2,7 @@ package payloads
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -35,7 +36,11 @@ func CreatePayloadsFromInputTypes(InputTypes []string, mongodbURI string) ([]Pay
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	err = client.Connect(ctx)
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
+	}
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatalf("payloads.CreatePayloadsFromInputTypes mongodb connection error: %s\n", err)
 	}
 	defer client.Disconnect(ctx)
 	defer cancel()
