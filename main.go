@@ -41,6 +41,7 @@ func main() {
 		Required: true,
 		Help:     "List of storage URIs. Supported URIs prefixes are file:// for file storage, and mongodb:// for mongdb.",
 	})
+	forceTLS := parser.Flag("l", "force-tls", &argparse.Options{Required: false, Help: "Force the use TLS/SSL", Default: false})
 
 	fmt.Println("gscanner")
 	err := parser.Parse(os.Args)
@@ -71,7 +72,7 @@ func main() {
 
 		//fmt.Printf("%s\n", text)
 
-		request, err := fuzzer.NewHTTPRequestFromBytes(text)
+		request, err := fuzzer.NewHTTPRequestFromBytes(text, *forceTLS)
 		if err != nil {
 			panic(err)
 		}

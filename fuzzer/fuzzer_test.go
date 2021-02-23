@@ -141,7 +141,7 @@ foo=bar&hello=' or 1=1--
 	}
 
 	for _, tt := range tests {
-		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		if err != nil {
 			t.Fatalf("Error create HTTPRequest from Bytes: %s\n", err)
 		}
@@ -193,7 +193,7 @@ Connection: close
 	}
 
 	for _, tt := range tests {
-		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		t.Logf("Path: %s", req.Request.URL.Path)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes: %s", err)
@@ -256,7 +256,7 @@ Content-Length: 114
 
 	for _, tt := range tests {
 		count := int8(0)
-		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes: %s", err)
 		}
@@ -319,7 +319,7 @@ foo=bar&hello=world&bar=foo`,
 
 	for _, tt := range tests {
 		count := int8(0)
-		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes: %s", err)
 		}
@@ -368,7 +368,7 @@ Connection: close
 
 	for _, tt := range tests {
 		count := int8(0)
-		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest using NewHTTPRequestFromBytes")
 		}
@@ -420,7 +420,7 @@ Connection: close
 	}
 
 	for _, tt := range tests {
-		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+		request, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 		if err != nil {
 			t.Fatalf("Error create HTTPRequest from Bytes: %s\n", err)
 		}
@@ -639,7 +639,7 @@ Accept-Language: en-US,en;q=0.9
 
 	for _, tt := range tests {
 
-		request, err := NewHTTPRequestFromBytes([]byte(tt.input))
+		request, err := NewHTTPRequestFromBytes([]byte(tt.input), false)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest from bytes %s\n", err)
 		}
@@ -713,7 +713,7 @@ Accept-Language: en-US,en;q=0.9
 
 	for _, tt := range tests {
 
-		request, err := NewHTTPRequestFromBytes([]byte(tt.input))
+		request, err := NewHTTPRequestFromBytes([]byte(tt.input), false)
 		if err != nil {
 			t.Fatalf("Error creating HTTPRequest from bytes %s\n", err)
 		}
@@ -812,7 +812,7 @@ Accept-Language: en-US,en;q=0.9
 // 	}
 
 // 	for _, tt := range tests {
-// 		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest))
+// 		req, err := NewHTTPRequestFromBytes([]byte(tt.inputRequest), false)
 // 		if err != nil {
 // 			t.Fatalf("Error creating request from bytes: %s", err)
 // 		}

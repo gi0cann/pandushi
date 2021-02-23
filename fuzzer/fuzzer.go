@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -112,10 +114,11 @@ type HTTPRequest struct {
 	TotalHeaderInjectionPoints int8   // Total number of Cookie injection points
 	TotalQueryInjectionPoints  int8   // Total number of Query injection points
 	TotalBodyInjectionPoints   int8   // Total number of Body injection points
+	ForceTLS                   bool   // Force request to use TLS/SSL
 }
 
 // NewHTTPRequestFromBytes take a []byte and returns a HTTPRequest
-func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
+func NewHTTPRequestFromBytes(reqstr []byte, forceTLS bool) (req HTTPRequest, err error) {
 	req.RequestText = string(reqstr)
 	reader := bytes.NewReader(reqstr)
 	bufreader := bufio.NewReader(reader)
@@ -131,6 +134,10 @@ func NewHTTPRequestFromBytes(reqstr []byte) (req HTTPRequest, err error) {
 	request.URL = newurl
 	req.Request = request
 	req.CountInjectionPoints()
+	req.ForceTLS = forceTLS
+	if forceTLS {
+		req.Request.URL.Scheme = "https"
+	}
 	return req, nil
 }
 
@@ -258,7 +265,7 @@ func (req *HTTPRequest) CountInjectionPoints() {
 }
 
 // NewHTTPRequestFromRequest takes a http.Request and returns a HTTPRequest
-func NewHTTPRequestFromRequest(r *http.Request) (req HTTPRequest) {
+func NewHTTPRequestFromRequest(r *http.Request, forceTLS bool) (req HTTPRequest) {
 	req.Request = r
 	RequestText, err := RequestToString(req.Request)
 	if err != nil {
@@ -267,6 +274,10 @@ func NewHTTPRequestFromRequest(r *http.Request) (req HTTPRequest) {
 		req.RequestText = RequestText
 	}
 	req.CountInjectionPoints()
+	req.ForceTLS = forceTLS
+	if forceTLS {
+		req.Request.URL.Scheme = "https"
+	}
 	return req
 }
 
@@ -514,8 +525,22 @@ func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 			go func(i int) {
 				defer wg.Done()
 				testcase := &(T.TestCases[i])
+				var transport http.RoundTripper = &http.Transport{
+					Proxy: http.ProxyFromEnvironment,
+					DialContext: (&net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}).DialContext,
+					ForceAttemptHTTP2:     true,
+					MaxIdleConns:          100,
+					IdleConnTimeout:       90 * time.Second,
+					TLSHandshakeTimeout:   10 * time.Second,
+					ExpectContinueTimeout: 1 * time.Second,
+					TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+				}
 				httpclient := http.Client{
-					Timeout: time.Duration(120 * time.Second),
+					Timeout:   time.Duration(120 * time.Second),
+					Transport: transport,
 				}
 
 				testcase.Request.Request.Close = true
@@ -566,7 +591,7 @@ func (req *HTTPRequest) InjectQueryParameters(injections []payloads.Payload) []T
 			}
 			NewQuery.Set(k, injection.Value)
 			rawquery := NewQuery.Encode()
-			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText), req.ForceTLS)
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s", err)
 			} else {
@@ -617,7 +642,7 @@ func (req *HTTPRequest) InjectHeaders(injections []payloads.Payload) []TestCase 
 				continue
 			}
 			NewHeaders.Set(k, injection.Value)
-			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText), req.ForceTLS)
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s", err)
 			} else {
@@ -658,7 +683,7 @@ func (req *HTTPRequest) InjectFormURLEncodedBody(injections []payloads.Payload) 
 			}
 			NewPostBody.Set(k, injection.Value)
 			rawbody := NewPostBody.Encode()
-			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText), req.ForceTLS)
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s", err)
 			} else {
@@ -698,7 +723,7 @@ func (req *HTTPRequest) InjectPath(injections []payloads.Payload) []TestCase {
 			current := strings.Split(req.Request.URL.Path, "/")
 			current = current[1:]
 			current[i] = injection.Value
-			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText), req.ForceTLS)
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s\n", err)
 			} else {
@@ -759,7 +784,7 @@ func (req *HTTPRequest) InjectJSONParameters(injections []payloads.Payload) []Te
 				replacer := submatch[1]
 				injected = pattern.ReplaceAll(injected, replacer)
 			}
-			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText))
+			NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(req.RequestText), req.ForceTLS)
 			if err != nil {
 				fmt.Printf("Error Creating HTTPRequest: %s", err)
 			} else {
@@ -807,7 +832,7 @@ func (req *HTTPRequest) InjectMarked(injections []payloads.Payload) []TestCase {
 				newReqArr[i] = pattern.ReplaceAllString(newReqArr[i], injection.Value)
 				newReqString := strings.Join(newReqArr, "")
 				newReqString = pattern.ReplaceAllString(newReqString, "")
-				NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(newReqString))
+				NewHTTPRequest, err := NewHTTPRequestFromBytes([]byte(newReqString), req.ForceTLS)
 
 				if err != nil {
 					newReqArr = make([]string, len(reqArr))
@@ -815,7 +840,7 @@ func (req *HTTPRequest) InjectMarked(injections []payloads.Payload) []TestCase {
 					newReqArr[i] = pattern.ReplaceAllString(newReqArr[i], url.QueryEscape(injection.Value))
 					newReqString = strings.Join(newReqArr, "")
 					newReqString = pattern.ReplaceAllString(newReqString, "")
-					NewHTTPRequest, err = NewHTTPRequestFromBytes([]byte(newReqString))
+					NewHTTPRequest, err = NewHTTPRequestFromBytes([]byte(newReqString), req.ForceTLS)
 				}
 				if err != nil {
 					fmt.Printf("Error Creating HTTPRequest: %s", err)
@@ -884,7 +909,7 @@ func CheckTarget(req *HTTPRequest, successcodes []int) error {
 	if req.IsMarked() {
 		pattern := regexp.MustCompile(`§.*?§`)
 		newReqStr := pattern.ReplaceAllString(req.RequestText, "")
-		checkReq, err = NewHTTPRequestFromBytes([]byte(newReqStr))
+		checkReq, err = NewHTTPRequestFromBytes([]byte(newReqStr), req.ForceTLS)
 		if err != nil {
 			return err
 		}
@@ -893,8 +918,22 @@ func CheckTarget(req *HTTPRequest, successcodes []int) error {
 	}
 
 	allowed := false
+	var transport http.RoundTripper = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	}
 	httpclient := http.Client{
-		Timeout: time.Duration(120 * time.Second),
+		Timeout:   time.Duration(120 * time.Second),
+		Transport: transport,
 	}
 
 	resp, err := httpclient.Do(checkReq.Request)
