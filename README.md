@@ -34,6 +34,7 @@ Pandushi keeps track of every fuzz case and the injection type used for later ma
 - [x] Add check to make sure target is live before initiating scan
 - [x] Write payload importer
 - [ ] Deduplicate payloads
+- [x] Force https
 
 ## Design notes
 
