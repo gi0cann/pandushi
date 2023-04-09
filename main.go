@@ -1,21 +1,15 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/akamensky/argparse"
 	"github.com/gi0cann/pandushi/fuzzer"
 	"github.com/gi0cann/pandushi/payloads"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
@@ -26,6 +20,11 @@ func main() {
 	payloadFname := parser.String("p", "payload-file", &argparse.Options{Required: false, Help: "Load payload file"})
 	payloadType := parser.String("t", "payload-type", &argparse.Options{Required: false, Help: "Payload type"})
 	projectName := parser.String("P", "project", &argparse.Options{Required: false, Help: "Project name", Default: "default"})
+	payloadStorageURI := parser.String("x", "payload-storage", &argparse.Options{
+		Required: false,
+		Help:     "Payload Storage URI. Supported URIs prefixes are file:// for file storage or mongodb:// for mongodb.",
+		Default:  "default",
+	})
 	scanName := parser.String("S", "scan-name", &argparse.Options{Required: false, Help: "Scan name", Default: "default"})
 	threadCount := parser.Int("T", "thread-count", &argparse.Options{
 		Required: false,
@@ -38,7 +37,7 @@ func main() {
 		Default:  fuzzer.SuccessCodes,
 	})
 	storageURIs := parser.StringList("C", "storage-config", &argparse.Options{
-		Required: true,
+		Required: false,
 		Help:     "List of storage URIs. Supported URIs prefixes are file:// for file storage, and mongodb:// for mongdb.",
 	})
 	forceTLS := parser.Flag("l", "force-tls", &argparse.Options{Required: false, Help: "Force the use TLS/SSL", Default: false})
@@ -49,9 +48,8 @@ func main() {
 		fmt.Print(parser.Usage(err))
 	}
 
-	storageconfig := fuzzer.CreateStorageConfigFromURI(*storageURIs)
-
-	if len(*requestFname) > 0 {
+	if len(*requestFname) > 0 && len(*storageURIs) > 0 {
+		storageconfig := fuzzer.CreateStorageConfigFromURI(*storageURIs)
 		fmt.Printf("Request Fname: %s\n", *requestFname)
 		fmt.Printf("Thread Count: %d\n", *threadCount)
 		if len(*errorcodes) > 0 {
@@ -97,68 +95,35 @@ func main() {
 			}
 			fuzzerTask.Run(*threadCount, storageconfig)
 		}
-	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 {
+	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 && len(*payloadStorageURI) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)
 		fmt.Printf("Payload Type: %s\n", *payloadType)
+		fmt.Printf("Payload Storage: %s\n", *payloadStorageURI)
+
 		payloadfd, err := os.Open(*payloadFname)
 		if err != nil {
 			panic(err)
 		}
 		defer payloadfd.Close()
 
-		client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
-		if err != nil {
-			panic(err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err = client.Connect(ctx)
-		if err != nil {
-			panic(err)
-		}
-		defer client.Disconnect(ctx)
-		defer cancel()
-
-		pandushiDB := client.Database("pandushi")
-		injectionsCollection := pandushiDB.Collection("injections")
-
-		payloadsRaw, err := ioutil.ReadAll(payloadfd)
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Printf("PayloadRAW: %s\n", payloadsRaw)
-		fmt.Printf("PayloadType: %s\n", *payloadType)
-
-		var testPayloads []payloads.Payload
-		injectionsCount := 0
-
-		for _, line := range strings.Split(string(payloadsRaw), "\n") {
-			testPayloads = append(testPayloads,
-				payloads.Payload{
-					InputType: strings.ToUpper(*payloadType),
-					Value:     line,
-				})
-			injectionsResult, err := injectionsCollection.InsertOne(ctx, bson.D{
-				{Key: "type", Value: *payloadType},
-				{Key: "value", Value: line},
-			})
+		outFilename := "payload.json"
+		if strings.HasPrefix(*payloadStorageURI, "file://") {
+			outFilename = strings.Split(*payloadStorageURI, "file://")[1]
+			_, err = payloads.NewPayloadsFromFileToJSONFile(*payloadType, *payloadFname, outFilename)
 			if err != nil {
-				log.Fatal(err)
-			} else {
-				injectionsCount++
-				fmt.Printf("inserted document with ID %v\n", injectionsResult.InsertedID)
+				log.Fatalln(err)
 			}
 		}
 
-		fmt.Printf("Inserted %v documents into injections collection!\n", injectionsCount)
-		outfd, err := os.OpenFile("payloads.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			panic(err)
+		mongoURI := "mongodb://localhost:27017"
+		if strings.HasPrefix(*payloadStorageURI, "mongodb://") {
+			mongoURI = *payloadStorageURI
+			_, err = payloads.NewPayloadsFromFileToMongoDB(*payloadType, *payloadFname, mongoURI, "pandushi")
+			if err != nil {
+				log.Fatalln(err)
+			}
 		}
-		defer outfd.Close()
-		enc := json.NewEncoder(outfd)
-		enc.SetEscapeHTML(false)
-		enc.Encode(testPayloads)
+
 	} else {
 		fmt.Print(parser.Usage(err))
 	}
