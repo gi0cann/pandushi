@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+    "net/url"
 
 	"github.com/akamensky/argparse"
 	"github.com/gi0cann/pandushi/fuzzer"
@@ -41,6 +42,7 @@ func main() {
 		Help:     "List of storage URIs. Supported URIs prefixes are file:// for file storage, and mongodb:// for mongdb.",
 	})
 	forceTLS := parser.Flag("l", "force-tls", &argparse.Options{Required: false, Help: "Force the use TLS/SSL", Default: false})
+    proxy := parser.String("s", "http-proxy", &argparse.Options{Required: false, Help: "http proxy format: (http,https)://<address>:<port>"})
 
 	fmt.Println("gscanner")
 	err := parser.Parse(os.Args)
@@ -50,6 +52,11 @@ func main() {
 
 	if len(*requestFname) > 0 && len(*storageURIs) > 0 {
 		storageconfig := fuzzer.CreateStorageConfigFromURI(*storageURIs)
+        var proxyURL *url.URL
+        proxyURL = nil
+        if len(*proxy) > 0 {
+            proxyURL, err = url.Parse(*proxy)
+        }
 		fmt.Printf("Request Fname: %s\n", *requestFname)
 		fmt.Printf("Thread Count: %d\n", *threadCount)
 		if len(*errorcodes) > 0 {
@@ -86,14 +93,14 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			fuzzerTask.Run(*threadCount, storageconfig)
+			fuzzerTask.Run(*threadCount, storageconfig, proxyURL)
 		} else {
 			fmt.Println("Not Marked")
 			fuzzerTask, err := fuzzer.NewTask(*projectName, *scanName, []string{"XSS"}, fuzzer.SupportedInjectionPointTypes, request, "mongodb://localhost:27017")
 			if err != nil {
 				panic(err)
 			}
-			fuzzerTask.Run(*threadCount, storageconfig)
+			fuzzerTask.Run(*threadCount, storageconfig, proxyURL)
 		}
 	} else if len(*payloadFname) > 0 && len(*payloadType) > 0 && len(*payloadStorageURI) > 0 {
 		fmt.Printf("Payload Fname: %s\n", *payloadFname)

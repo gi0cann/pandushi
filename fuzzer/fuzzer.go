@@ -507,7 +507,7 @@ func NewTask(Project string, Name string, InjectionTypes []string, InjectionPoin
 }
 
 // Run starts and run a fuzzer Task
-func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
+func (T *Task) Run(TotalThreads int, storageconfig StorageConfig, Proxy *url.URL) {
 	if TotalThreads == 0 {
 		TotalThreads = 10
 	}
@@ -525,8 +525,8 @@ func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 			go func(i int) {
 				defer wg.Done()
 				testcase := &(T.TestCases[i])
-				var transport http.RoundTripper = &http.Transport{
-					Proxy: http.ProxyFromEnvironment,
+				var transportConfig *http.Transport = &http.Transport{
+                    Proxy: http.ProxyFromEnvironment,
 					DialContext: (&net.Dialer{
 						Timeout:   30 * time.Second,
 						KeepAlive: 30 * time.Second,
@@ -538,6 +538,10 @@ func (T *Task) Run(TotalThreads int, storageconfig StorageConfig) {
 					ExpectContinueTimeout: 1 * time.Second,
 					TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 				}
+                if Proxy != nil {
+                    transportConfig.Proxy = http.ProxyURL(Proxy)
+                }
+                var transport http.RoundTripper = transportConfig
 				httpclient := http.Client{
 					Timeout:   time.Duration(120 * time.Second),
 					Transport: transport,
